@@ -100,8 +100,9 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
             }
             refreshPhoto()
             updateBackgrounds()
-            tickFace(System.currentTimeMillis())
-            if (running) handler.postDelayed(this, 1000L)
+            val now = System.currentTimeMillis()
+            tickFace(now)
+            if (running) handler.postDelayed(this, ClockCadence.nextDelay(now, needsSeconds()))
         }
     }
 
@@ -121,6 +122,7 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
     private val canvasView = GenerativeCanvasView(context).apply { visibility = View.GONE }
     private val matrixView = MatrixRainView(context).apply { visibility = View.GONE }
     private val snowView = SnowView(context).apply { visibility = View.GONE }
+    private val ambientView = AmbientView(context).apply { visibility = View.GONE }
 
     // ---- Faces ----
     private val analogView = AnalogClockView(context)
@@ -180,6 +182,7 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
     private var hourlyText = ""
 
     init {
+        MusicSession.useContext(context)
         val shortSide = min(metrics.widthPixels, metrics.heightPixels)
         val width = metrics.widthPixels.toFloat()
 
@@ -203,6 +206,7 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
         duoRow.addView(duoRight, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
 
         val margin = (24 * metrics.density).toInt()
+        root.addView(ambientView, matchParent())
         root.addView(photoView, matchParent())
         root.addView(photoCalendarView, matchParent())
         root.addView(canvasView, matchParent())
@@ -312,6 +316,10 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
             photoView.visibility = View.GONE
             photoLoaded = null
         }
+        // The ambient wash shows only when a theme is chosen and pure black is off.
+        val theme = Themes.byId(settings.themeId)
+        ambientView.theme = theme
+        ambientView.visibility = visibleIf(theme != null && !settings.pureBlack)
         matrixView.setRunning(false)
         updateBackgrounds()
         checker.visibility = visibleIf(settings.checkerboard)
@@ -831,11 +839,31 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
         }
     }
 
-    /** Nudges the whole block by a few dp each minute to protect OLED panels from burn-in. */
+    /**
+     * Moves the whole block to one of nine positions, one per minute, to protect OLED panels from burn-in.
+     * The cycle is fixed rather than random, so the block never jumps to a surprising spot. The offsets
+     * (8 dp across, 6 dp down) follow Standby Pro's burn-in policy.
+     */
     private fun shiftForBurnIn() {
-        val px = metrics.density * 8f
-        column.translationX = Random.nextFloat() * 2 * px - px
-        column.translationY = Random.nextFloat() * 2 * px - px
+        val step = ((System.currentTimeMillis() / MINUTE_MS) % 9).toInt()
+        column.translationX = ((step % 3) - 1) * metrics.density * 8f
+        column.translationY = ((step / 3) - 1) * metrics.density * 6f
+    }
+
+    /**
+     * True when something on screen changes every second, so the ticker must wake each second. Otherwise it
+     * wakes on the minute, which saves battery when the clock shows only minute-level information.
+     */
+    private fun needsSeconds(): Boolean {
+        val face = currentFace()
+        return settings.showSeconds ||
+            settings.cornerLeft == Complications.TIME_SEC || settings.cornerRight == Complications.TIME_SEC ||
+            (face == Settings.FACE_NEON && settings.neonPulse) ||
+            (face == Settings.FACE_SEGMENTED && settings.segmentBlink) ||
+            (face == Settings.FACE_PANELS && settings.panelRotateSeconds > 0) ||
+            face == Settings.FACE_PHOTO ||
+            MusicSession.title() != null ||
+            (settings.visualCanvas && NoisePlayer.isPlaying)
     }
 
     /** The clock text for [now], with seconds when that setting is on. */
@@ -861,8 +889,14 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
 
     /** The clock colour from the palette setting. The charging and neon faces keep their own colours. */
     private fun applyPalette(face: String) {
-        if (face != Settings.FACE_CHARGE && face != Settings.FACE_NEON) {
+        val theme = Themes.byId(settings.themeId)
+        if (theme != null && face != Settings.FACE_CHARGE && face != Settings.FACE_NEON) {
+            // A theme sets the text colour and a glow in its accent colour, as in Standby Pro.
+            timeView.setTextColor(theme.foreground)
+            timeView.setShadowLayer(30f * theme.glow + 4f, 0f, 0f, theme.accent)
+        } else if (face != Settings.FACE_CHARGE && face != Settings.FACE_NEON) {
             timeView.setTextColor(Settings.PALETTES.getOrNull(settings.clockPalette)?.second ?: Color.WHITE)
+            timeView.setShadowLayer(12f, 0f, 0f, 0xCC000000.toInt())
         }
         updateGradient()
     }

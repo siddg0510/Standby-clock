@@ -21,7 +21,11 @@ import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.graphics.drawable.GradientDrawable
+import android.view.Gravity
+import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.Toast
 import kotlin.math.abs
 
@@ -85,6 +89,9 @@ class MainActivity : Activity() {
         val frame = FrameLayout(this).apply {
             addView(clock.root, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             addView(sleepOverlay, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            addView(quickBar, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
+            ).apply { setMargins(0, 0, 0, (24 * resources.displayMetrics.density).toInt()) })
         }
         setContentView(frame)
 
@@ -148,6 +155,44 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Buttons along the bottom (optional, in settings): style, face, group and settings, as in Standby Pro. */
+    private val quickBar: LinearLayout by lazy {
+        val dp = resources.displayMetrics.density
+        LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding((8 * dp).toInt(), (4 * dp).toInt(), (8 * dp).toInt(), (4 * dp).toInt())
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 999f
+                setColor(0xB8000000.toInt())
+            }
+            val actions = listOf<Pair<String, () -> Unit>>(
+                "Style" to {
+                    val theme = Themes.byId(settings.cycleTheme())
+                    clock.reloadFace()
+                    Toast.makeText(this@MainActivity, theme?.name ?: "Plain", Toast.LENGTH_SHORT).show()
+                },
+                "Face" to { changeFace(forward = true) },
+                "Group" to { changeGroup(forward = true) },
+                "Settings" to { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) },
+            )
+            actions.forEach { (label, action) ->
+                addView(Button(this@MainActivity).apply {
+                    text = label
+                    setOnClickListener {
+                        resetSleepTimer()
+                        action()
+                    }
+                })
+            }
+        }
+    }
+
+    /** Shows the bar only when the setting is on and the screen is awake. */
+    private fun updateQuickBar() {
+        quickBar.visibility = if (settings.quickControls && !asleep) View.VISIBLE else View.GONE
+    }
+
     private fun changeFace(forward: Boolean) {
         val face = settings.cycleFace(forward)
         clock.reloadFace()
@@ -171,6 +216,7 @@ class MainActivity : Activity() {
         if (fromCharging && settings.closeWhenUpright) uprightWatch?.enable()
         clock.start()
         resetSleepTimer()
+        updateQuickBar()
     }
 
     override fun onStop() {
@@ -192,6 +238,7 @@ class MainActivity : Activity() {
     private fun sleep() {
         asleep = true
         sleepOverlay.visibility = View.VISIBLE
+        updateQuickBar()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val params = window.attributes
         params.screenBrightness = MIN_BRIGHTNESS
@@ -202,6 +249,7 @@ class MainActivity : Activity() {
         if (asleep) {
             asleep = false
             sleepOverlay.visibility = View.GONE
+            updateQuickBar()
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             applyBrightness(nightNow)
         }

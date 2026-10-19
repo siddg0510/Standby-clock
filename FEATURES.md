@@ -19,6 +19,7 @@ Status key:
 - [x] Double-tap the clock to close the app (can be turned off)
 - [~] Haptic feedback on taps, swipes, long-press, laps and counters. Widget picker snaps are not haptic.
 - [x] Spaces: named profiles, each with its own screens and settings (Home is the default)
+- [x] Quick controls: an optional row of buttons along the bottom for style, face, group and settings
 - [x] First-run walkthrough: five pages, also available from More settings
 
 ## 2. Settings
@@ -100,6 +101,7 @@ Status key:
 - [~] Neon: green glow that pulses each second, no animated tick ring
 - [x] Matrix rain behind the time
 - [x] Radial: minute ring with the time inside; the setting dims the passed minutes instead
+- [x] Colour themes: Aurora, Night Red, Solar and Matrix, each with a background gradient and faint arcs (adapted from Standby Pro, see NOTICE.md)
 - [x] Analog clock, with an optional digital sub-dial
 - [x] Word clock; Roman numerals; pixel art
 - [x] Dementia clock: time of day, full date and large text
@@ -112,6 +114,7 @@ Status key:
 - [x] Command Center: five live tiles (greeting and time, weather, next event with countdown, music, battery). Tap a tile to make it the large one; the choice is remembered.
 - [x] Command Center fades to a dim state when nothing is playing and no event is near
 - [x] Calendar agenda with a countdown (Tools and the Command Center)
+- [x] Calendar card in a panel: up to three events as pills, with minutes until each soon one
 - [~] System dashboard: model, battery, memory and storage, as text
 - [~] Starship console: text-based telemetry, not the sci-fi art
 - [x] Charging screen: large percentage, progress bar, time to full, time to the milestone, red "On battery", three styles, and a hide-clock option
@@ -141,6 +144,7 @@ Status key:
 
 - [x] Now-playing card for apps with media controls (Spotify, YouTube Music, Apple Music, Deezer and others)
 - [x] Album art, play and pause, previous and next, progress bar, and a background colour from the album art
+- [x] Music card in a panel, with play, pause, previous and next. Without a media session, the buttons send media keys to the system, so they still work without notification access.
 - [~] Like: sends a heart rating, which only players that use ratings act on. Shuffle and repeat are not built, because Android does not let other apps change them.
 - [-] Synced lyrics (lyrics text is copyrighted, so this needs a licensed source)
 - [x] Internet radio: stations you enter, played in turn
@@ -188,4 +192,6 @@ Status key:
 - ISS: wheretheiss.at, which needs no key, read at most once a minute and cached.
 - Sound: generated on the phone with AudioTrack. It is not a foreground service, so strict battery settings can stop it.
 - Spaces: each space keeps its own settings file.
-- Burn-in: a shifting layout, a one-pixel checkerboard overlay, and a black sleep screen.
+- Burn-in: a shifting layout that steps through nine fixed positions, one a minute, a one-pixel checkerboard overlay, and a black sleep screen.
+- Redraw cadence: the clock wakes each second only when something on screen shows seconds or moves every second, and otherwise once a minute. This follows Standby Pro's policy.
+- Attribution: ideas and layouts adapted from Standby Pro (MIT) are listed in [NOTICE.md](NOTICE.md).

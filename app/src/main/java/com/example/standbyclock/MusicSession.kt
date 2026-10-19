@@ -2,7 +2,9 @@ package com.example.standbyclock
 
 import android.content.ComponentName
 import android.content.Context
+import android.media.AudioManager
 import android.media.Rating
+import android.view.KeyEvent
 import android.graphics.Bitmap
 import android.media.MediaMetadata
 import android.media.session.MediaController
@@ -55,6 +57,7 @@ object MusicSession {
     private var manager: MediaSessionManager? = null
     private var component: ComponentName? = null
     private var controller: MediaController? = null
+    private var appContext: Context? = null
 
     private val sessionsChanged = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
         choose(controllers)
@@ -133,17 +136,38 @@ object MusicSession {
         }
     }
 
+    /**
+     * Play or pause. With no media session, the same media key the headphone button sends is dispatched
+     * to the system, which works without notification access. This idea is from Standby Pro's native bridge.
+     */
     fun playPause() {
-        val session = controller ?: return
+        val session = controller
+        if (session == null) {
+            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            return
+        }
         if (isPlaying()) session.transportControls.pause() else session.transportControls.play()
     }
 
     fun previous() {
-        controller?.transportControls?.skipToPrevious()
+        val session = controller
+        if (session == null) sendMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS) else session.transportControls.skipToPrevious()
     }
 
     fun next() {
-        controller?.transportControls?.skipToNext()
+        val session = controller
+        if (session == null) sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT) else session.transportControls.skipToNext()
+    }
+
+    /** Lets the key fallback reach the system. Called once from the clock, which runs without notification access. */
+    fun useContext(context: Context) {
+        appContext = context.applicationContext
+    }
+
+    private fun sendMediaKey(code: Int) {
+        val audio = appContext?.getSystemService(AudioManager::class.java) ?: return
+        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
     }
 
     /** Sends a heart to the player. Players that do not use ratings ignore it. */

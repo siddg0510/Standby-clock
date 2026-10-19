@@ -102,7 +102,16 @@ class MoreSettingsActivity : Activity() {
         ) { settings.weatherLayout = weatherLayouts[it] })
 
         content.addView(section("Clock look"))
-        content.addView(label("Clock colour"))
+        val themeIds = listOf("off") + Themes.ALL.map { it.id }
+        content.addView(label("Theme (a colour set with an ambient background, from Standby Pro)"))
+        content.addView(spinner(
+            arrayOf("Off (use the clock colour below)") + Themes.ALL.map { it.name }.toTypedArray(),
+            themeIds.indexOf(settings.themeId).coerceAtLeast(0),
+        ) { settings.themeId = themeIds[it] })
+        content.addView(toggle("Quick controls along the bottom (style, face, group, settings)", settings.quickControls) {
+            settings.quickControls = it
+        })
+        content.addView(label("Clock colour (used when no theme is set)"))
         content.addView(spinner(
             Settings.PALETTES.map { it.first }.toTypedArray(),
             settings.clockPalette,

@@ -46,6 +46,7 @@ class PanelsView(private val context: Context) : LinearLayout(context) {
     private val lastWidget = mutableListOf<String?>()
     private val widgetViews = mutableMapOf<Int, View>()
     private val textCache = mutableMapOf<String, String>()
+    private val cards = mutableMapOf<String, View>()
     private var cacheMinute = -1L
     private var yogaOn = false
 
@@ -88,6 +89,7 @@ class PanelsView(private val context: Context) : LinearLayout(context) {
         }
         yogaOn = false
         textCache.clear()
+        cards.clear()
     }
 
     /** Starts widget updates. Call from the clock's start. */
@@ -103,7 +105,8 @@ class PanelsView(private val context: Context) : LinearLayout(context) {
     /** Shows the right item in every panel for [now]. Called once a second while the face is up. */
     fun tick(now: Long, weatherLine: String, hourlyLine: String) {
         val minute = now / 60_000L
-        if (minute != cacheMinute) {
+        val minuteChanged = minute != cacheMinute
+        if (minuteChanged) {
             cacheMinute = minute
             textCache.clear()
         }
@@ -122,6 +125,18 @@ class PanelsView(private val context: Context) : LinearLayout(context) {
                 if (lastWidget[panel] != item) {
                     lastWidget[panel] = item
                     showWidget(panel, item.removePrefix(WIDGET_PREFIX).toIntOrNull())
+                }
+            } else if (item == "agenda" || item == "music") {
+                texts[panel].visibility = View.GONE
+                slots[panel].visibility = View.VISIBLE
+                if (lastWidget[panel] != item) {
+                    lastWidget[panel] = item
+                    showCard(panel, item, now)
+                } else {
+                    // The calendar is read once a minute; the music card follows playback every second.
+                    val card = cards["$panel:$item"]
+                    if (card is AgendaCard && minuteChanged) card.update(now)
+                    if (card is MusicCard) card.update()
                 }
             } else {
                 lastWidget[panel] = null
@@ -148,6 +163,21 @@ class PanelsView(private val context: Context) : LinearLayout(context) {
             params.forEachIndexed { i, lp -> lp.weight = if (i == 0 && idle) baseWeights[i] * 1.8f else baseWeights[i] }
             requestLayout()
         }
+    }
+
+    /** Puts a calendar or music card in the panel's slot, creating it the first time. */
+    private fun showCard(panel: Int, item: String, now: Long) {
+        val slot = slots[panel]
+        slot.removeAllViews()
+        val card = cards.getOrPut("$panel:$item") {
+            if (item == "agenda") AgendaCard(context) else MusicCard(context)
+        }
+        when (card) {
+            is AgendaCard -> card.update(now)
+            is MusicCard -> card.update()
+        }
+        (card.parent as? ViewGroup)?.removeView(card)
+        slot.addView(card, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
     }
 
     private fun showWidget(panel: Int, id: Int?) {

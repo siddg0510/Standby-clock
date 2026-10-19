@@ -369,6 +369,22 @@ class Settings(context: Context) {
         get() = prefs.getInt(KEY_PALETTE, 0)
         set(value) = prefs.edit().putInt(KEY_PALETTE, value).apply()
 
+    /** Colour theme id from [Themes], or "off" to keep the palette and black background. */
+    var themeId: String
+        get() = prefs.getString(KEY_THEME, "off") ?: "off"
+        set(value) = prefs.edit().putString(KEY_THEME, value).apply()
+
+    /** Moves to the next theme (off, then each theme) and returns its id. */
+    fun cycleTheme(): String {
+        themeId = Themes.nextId(themeId)
+        return themeId
+    }
+
+    /** Shows a row of buttons along the bottom: style, face, group and settings. */
+    var quickControls: Boolean
+        get() = prefs.getBoolean(KEY_QUICK_CONTROLS, false)
+        set(value) = prefs.edit().putBoolean(KEY_QUICK_CONTROLS, value).apply()
+
     /** Paints the clock digits with a gradient from the palette colour to a lighter shade. */
     var clockGradient: Boolean
         get() = prefs.getBoolean(KEY_GRADIENT, false)
@@ -597,8 +613,8 @@ class Settings(context: Context) {
         val PANEL_ITEMS = listOf(
             "clock" to "Clock",
             "weather" to "Weather",
-            "agenda" to "Next calendar event",
-            "music" to "Now playing",
+            "agenda" to "Calendar card (up to three events)",
+            "music" to "Music card (with controls)",
             "battery" to "Battery",
             "protocol" to "Protocol (rotating)",
             "quote" to "Quote (rotating)",
@@ -762,5 +778,7 @@ class Settings(context: Context) {
         private const val KEY_PANEL_ITEMS = "panel_items"
         private const val KEY_PANEL_ROTATE = "panel_rotate"
         private const val KEY_PANEL_YOGA = "panel_yoga"
+        private const val KEY_THEME = "theme_id"
+        private const val KEY_QUICK_CONTROLS = "quick_controls"
     }
 }
