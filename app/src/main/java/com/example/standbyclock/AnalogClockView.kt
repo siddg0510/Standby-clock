@@ -28,7 +28,20 @@ class AnalogClockView(context: Context) : View(context) {
     private val subText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         textAlign = Paint.Align.CENTER
-        typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+        typeface = Typeface.create(Typeface.create("sans-serif", Typeface.NORMAL), 300, false)
+        fontFeatureSettings = "tnum"
+    }
+
+    private var accent = Color.WHITE
+
+    /** Recolours the dial from a theme, or back to white for null. */
+    fun setTheme(theme: ThemePreset?) {
+        val fg = theme?.foreground ?: Color.WHITE
+        accent = theme?.accent ?: Color.WHITE
+        ticks.color = fg
+        hands.color = fg
+        subText.color = fg
+        invalidate()
     }
 
     fun setTime(hourOfDay: Int, minuteOfHour: Int) {
@@ -54,6 +67,8 @@ class AnalogClockView(context: Context) : View(context) {
         for (i in 0 until 12) {
             val angle = Math.toRadians(i * 30.0 - 90.0)
             val inner = if (i % 3 == 0) 0.80 else 0.88
+            val ticksColor = ticks.color
+            if (i % 3 == 0) ticks.color = accent
             canvas.drawLine(
                 cx + (cos(angle) * radius * inner).toFloat(),
                 cy + (sin(angle) * radius * inner).toFloat(),
@@ -61,6 +76,7 @@ class AnalogClockView(context: Context) : View(context) {
                 cy + (sin(angle) * radius * 0.96).toFloat(),
                 ticks,
             )
+            ticks.color = ticksColor
         }
 
         hands.strokeWidth = radius * 0.05f

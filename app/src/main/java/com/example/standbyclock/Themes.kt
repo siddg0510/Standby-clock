@@ -23,6 +23,8 @@ data class ThemePreset(
     val secondary: Int,
     /** How strong the glow behind the time is, from 0 to 1. */
     val glow: Float,
+    /** Two or more colours from top to bottom for the digits, or empty for the plain foreground colour. */
+    val gradient: List<Int> = emptyList(),
 )
 
 object Themes {
@@ -32,6 +34,18 @@ object Themes {
         ThemePreset("night-red", "Night Red", 0xFF030000.toInt(), 0xFFFF2424.toInt(), 0xFFFF2D2D.toInt(), 0xFF7F1D1D.toInt(), 0.22f),
         ThemePreset("solar", "Solar", 0xFF070401.toInt(), 0xFFFFF7ED.toInt(), 0xFFF59E0B.toInt(), 0xFFEF4444.toInt(), 0.26f),
         ThemePreset("matrix", "Matrix", 0xFF000403.toInt(), 0xFF7CFF8A.toInt(), 0xFF22C55E.toInt(), 0xFF064E3B.toInt(), 0.32f),
+        ThemePreset(
+            "sunset", "Sunset", 0xFF0A0306.toInt(), 0xFFFFE6D5.toInt(), 0xFFFB7185.toInt(), 0xFFF59E0B.toInt(), 0.30f,
+            gradient = listOf(0xFFFFC371.toInt(), 0xFFFF5E7E.toInt()),
+        ),
+        ThemePreset(
+            "ocean", "Ocean", 0xFF01060C.toInt(), 0xFFE0F7FF.toInt(), 0xFF38BDF8.toInt(), 0xFF0EA5E9.toInt(), 0.34f,
+            gradient = listOf(0xFF9BE7FF.toInt(), 0xFF3B82F6.toInt()),
+        ),
+        ThemePreset(
+            "orchid", "Orchid", 0xFF05020A.toInt(), 0xFFF5E8FF.toInt(), 0xFFC084FC.toInt(), 0xFFEC4899.toInt(), 0.32f,
+            gradient = listOf(0xFFE9B6FF.toInt(), 0xFFFF6FB5.toInt()),
+        ),
     )
 
     /** The theme for [id], or null for "off" (the app's own black background and palette). */
@@ -41,6 +55,13 @@ object Themes {
     fun nextId(id: String): String {
         val ids = listOf("off") + ALL.map { it.id }
         return ids[(ids.indexOf(id).coerceAtLeast(0) + 1) % ids.size]
+    }
+
+    /** A vertical gradient for the digits of a theme that has one, between [top] and [bottom]. Null for a plain theme. */
+    fun digitShader(theme: ThemePreset?, top: Float, bottom: Float): Shader? {
+        val colors = theme?.gradient ?: return null
+        if (colors.size < 2 || bottom <= top) return null
+        return LinearGradient(0f, top, 0f, bottom, colors.toIntArray(), null, Shader.TileMode.CLAMP)
     }
 
     fun mix(from: Int, to: Int, amount: Float): Int = Color.rgb(
@@ -59,6 +80,7 @@ class AmbientView(context: Context) : View(context) {
     var theme: ThemePreset? = null
         set(value) {
             field = value
+            rebuild()
             invalidate()
         }
 
@@ -67,27 +89,42 @@ class AmbientView(context: Context) : View(context) {
         style = Paint.Style.STROKE
         strokeWidth = 2f * resources.displayMetrics.density
     }
+    private val arcBounds = RectF()
 
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        val theme = theme ?: return
-        val w = width.toFloat()
-        val h = height.toFloat()
-        val density = resources.displayMetrics.density
+    /** The gradient and arc colour only depend on the size and the theme, so they are rebuilt just when those change. */
+    private fun rebuild() {
+        val theme = theme
+        if (theme == null || width <= 0 || height <= 0) {
+            fill.shader = null
+            return
+        }
         fill.shader = LinearGradient(
-            0f, 0f, w, h,
+            0f, 0f, width.toFloat(), height.toFloat(),
             intArrayOf(theme.background, Themes.mix(theme.background, theme.secondary, 0.22f), Color.BLACK),
             null,
             Shader.TileMode.CLAMP,
         )
-        canvas.drawRect(0f, 0f, w, h, fill)
-
         arc.color = Color.argb(10, Color.red(theme.accent), Color.green(theme.accent), Color.blue(theme.accent))
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldW: Int, oldH: Int) {
+        super.onSizeChanged(w, h, oldW, oldH)
+        rebuild()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        if (theme == null || fill.shader == null) return
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val density = resources.displayMetrics.density
+        canvas.drawRect(0f, 0f, w, h, fill)
         for (i in 0 until 9) {
             val cx = w * (0.12f + i * 0.09f)
             val cy = h * 0.14f
             val r = (90f + i * 26f) * density
-            canvas.drawArc(RectF(cx - r, cy - r, cx + r, cy + r), 27f, 162f, false, arc)
+            arcBounds.set(cx - r, cy - r, cx + r, cy + r)
+            canvas.drawArc(arcBounds, 27f, 162f, false, arc)
         }
     }
 }

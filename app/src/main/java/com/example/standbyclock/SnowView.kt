@@ -15,20 +15,13 @@ class SnowView(context: Context) : View(context) {
     private var ys = FloatArray(0)
     private var speeds = FloatArray(0)
     private var sizes = FloatArray(0)
-    private var running = false
+    private val loop = FrameLoop(this) { dt -> advance(dt) }
 
-    private val frame: Runnable = object : Runnable {
-        override fun run() {
-            advance()
-            invalidate()
-            if (running) postDelayed(this, FRAME_MS)
-        }
-    }
+    fun setRunning(on: Boolean) = loop.setRunning(on)
 
-    fun setRunning(on: Boolean) {
-        if (on == running) return
-        running = on
-        if (on) post(frame) else removeCallbacks(frame)
+    override fun onVisibilityAggregated(isVisible: Boolean) {
+        super.onVisibilityAggregated(isVisible)
+        loop.visibilityChanged(isVisible)
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldW: Int, oldH: Int) {
@@ -36,14 +29,15 @@ class SnowView(context: Context) : View(context) {
         val count = 90
         xs = FloatArray(count) { Random.nextFloat() * w }
         ys = FloatArray(count) { Random.nextFloat() * h }
-        speeds = FloatArray(count) { 1.5f + Random.nextFloat() * 3f }
+        // Pixels per second.
+        speeds = FloatArray(count) { 30f + Random.nextFloat() * 60f }
         sizes = FloatArray(count) { 2f + Random.nextFloat() * 4f }
     }
 
-    private fun advance() {
+    private fun advance(dt: Float) {
         for (i in ys.indices) {
-            ys[i] += speeds[i]
-            xs[i] += sin(ys[i] / 60f) * 0.6f
+            ys[i] += speeds[i] * dt
+            xs[i] += sin(ys[i] / 60f) * 12f * dt
             if (ys[i] > height) {
                 ys[i] = -10f
                 xs[i] = Random.nextFloat() * width
@@ -57,13 +51,8 @@ class SnowView(context: Context) : View(context) {
     }
 
     override fun onDetachedFromWindow() {
-        running = false
-        removeCallbacks(frame)
+        loop.detach()
         super.onDetachedFromWindow()
-    }
-
-    private companion object {
-        const val FRAME_MS = 50L
     }
 }
 

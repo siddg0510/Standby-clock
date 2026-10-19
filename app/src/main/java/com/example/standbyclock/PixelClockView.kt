@@ -13,6 +13,27 @@ class PixelClockView(context: Context) : View(context) {
     private var text = "00:00"
     private val lit = Paint().apply { color = Color.WHITE }
 
+    private var theme: ThemePreset? = null
+
+    /** Recolours the pixels from a theme (with its gradient, if it has one), or back to white for null. */
+    fun setTheme(value: ThemePreset?) {
+        theme = value
+        lit.color = value?.foreground ?: Color.WHITE
+        applyShader()
+        invalidate()
+    }
+
+    private fun applyShader() {
+        val pixel = min(width / (text.length * 4f), height / 5f)
+        val top = (height - 5 * pixel) / 2f
+        lit.shader = Themes.digitShader(theme, top, top + 5 * pixel)
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldW: Int, oldH: Int) {
+        super.onSizeChanged(w, h, oldW, oldH)
+        applyShader()
+    }
+
     fun setTime(hour24: Int, minute: Int, use24Hour: Boolean) {
         val hour = if (use24Hour) hour24 else (hour24 % 12).let { if (it == 0) 12 else it }
         text = "%02d:%02d".format(hour, minute)

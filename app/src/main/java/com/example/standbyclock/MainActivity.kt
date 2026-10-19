@@ -26,7 +26,8 @@ import android.view.Gravity
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.Toast
+import android.widget.TextView
+import android.view.animation.DecelerateInterpolator
 import kotlin.math.abs
 
 /**
@@ -89,6 +90,9 @@ class MainActivity : Activity() {
         val frame = FrameLayout(this).apply {
             addView(clock.root, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             addView(sleepOverlay, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            addView(indicator, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
+            ).apply { setMargins(0, 0, 0, (96 * resources.displayMetrics.density).toInt()) })
             addView(quickBar, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
             ).apply { setMargins(0, 0, 0, (24 * resources.displayMetrics.density).toInt()) })
@@ -170,7 +174,7 @@ class MainActivity : Activity() {
                 "Style" to {
                     val theme = Themes.byId(settings.cycleTheme())
                     clock.reloadFace()
-                    Toast.makeText(this@MainActivity, theme?.name ?: "Plain", Toast.LENGTH_SHORT).show()
+                    showIndicator(theme?.name ?: "Plain")
                 },
                 "Face" to { changeFace(forward = true) },
                 "Group" to { changeGroup(forward = true) },
@@ -195,14 +199,56 @@ class MainActivity : Activity() {
 
     private fun changeFace(forward: Boolean) {
         val face = settings.cycleFace(forward)
+        // The new face is applied at once and fades in; nothing waits on an animation to finish.
         clock.reloadFace()
-        Toast.makeText(this, faceName(face), Toast.LENGTH_SHORT).show()
+        clock.fadeFaceIn()
+        showIndicator(faceName(face))
     }
 
     private fun changeGroup(forward: Boolean) {
         val face = settings.switchGroup(forward)
         clock.reloadFace()
-        Toast.makeText(this, faceName(face), Toast.LENGTH_SHORT).show()
+        clock.fadeFaceIn()
+        showIndicator(faceName(face))
+    }
+
+    /** A small rounded label near the bottom that names the new face or style, then fades away after 1.2 s. */
+    private val indicator: TextView by lazy {
+        val dp = resources.displayMetrics.density
+        TextView(this).apply {
+            setTextColor(Color.WHITE)
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16f)
+            setPadding((18 * dp).toInt(), (8 * dp).toInt(), (18 * dp).toInt(), (8 * dp).toInt())
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 999f
+                setColor(0xCC000000.toInt())
+            }
+            alpha = 0f
+            visibility = View.GONE
+        }
+    }
+    private val hideIndicator = Runnable {
+        indicator.animate().cancel()
+        indicator.animate().alpha(0f).setDuration(INDICATOR_FADE_MS).withEndAction {
+            indicator.visibility = View.GONE
+        }.start()
+    }
+
+    private fun showIndicator(label: String) {
+        indicator.removeCallbacks(hideIndicator)
+        indicator.animate().cancel()
+        indicator.text = label
+        indicator.visibility = View.VISIBLE
+        indicator.animate().alpha(1f).setDuration(INDICATOR_FADE_MS).setInterpolator(DecelerateInterpolator()).start()
+        indicator.postDelayed(hideIndicator, INDICATOR_SHOW_MS)
+    }
+
+    private fun clearIndicator() {
+        indicator.removeCallbacks(hideIndicator)
+        indicator.animate().cancel()
+        indicator.alpha = 0f
+        indicator.visibility = View.GONE
     }
 
     private fun faceName(face: String): String =
@@ -221,6 +267,7 @@ class MainActivity : Activity() {
 
     override fun onStop() {
         clock.stop()
+        clearIndicator()
         uprightWatch?.disable()
         unregisterUnplugged()
         handler.removeCallbacks(sleepRunnable)
@@ -237,6 +284,7 @@ class MainActivity : Activity() {
     /** Black screen, minimum brightness, and no keep-awake flag, so the phone's own timeout can turn the panel off. */
     private fun sleep() {
         asleep = true
+        clock.setAwake(false)
         sleepOverlay.visibility = View.VISIBLE
         updateQuickBar()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -248,6 +296,7 @@ class MainActivity : Activity() {
     private fun wake() {
         if (asleep) {
             asleep = false
+            clock.setAwake(true)
             sleepOverlay.visibility = View.GONE
             updateQuickBar()
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -296,6 +345,8 @@ class MainActivity : Activity() {
         const val EXTRA_FROM_CHARGING = "from_charging"
         private const val SWIPE_PX = 120
         private const val MIN_BRIGHTNESS = 0.01f
+        private const val INDICATOR_FADE_MS = 150L
+        private const val INDICATOR_SHOW_MS = 1200L
 
         /** The walkthrough, shown on first launch and from More settings. Each page is one dialog. */
         fun showTour(activity: Activity, step: Int = 0) {

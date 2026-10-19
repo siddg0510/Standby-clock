@@ -15,6 +15,28 @@ class SegmentedClockView(context: Context) : View(context) {
     private val lit = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
     private val ghost = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x22FFFFFF }
     private var colonOn = true
+    private var theme: ThemePreset? = null
+    // The seven segment rectangles are reused for every digit, so drawing allocates nothing.
+    private val segments = Array(7) { RectF() }
+
+    /** Recolours the digits from a theme (with its gradient, if it has one), or back to white for null. */
+    fun setTheme(value: ThemePreset?) {
+        theme = value
+        val colour = value?.foreground ?: Color.WHITE
+        lit.color = colour
+        ghost.color = Color.argb(0x22, Color.red(colour), Color.green(colour), Color.blue(colour))
+        applyShader()
+        invalidate()
+    }
+
+    private fun applyShader() {
+        lit.shader = Themes.digitShader(theme, 0f, height.toFloat())
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldW: Int, oldH: Int) {
+        super.onSizeChanged(w, h, oldW, oldH)
+        applyShader()
+    }
 
     /** Shows or hides the colon between the hours and minutes. The clock turns it off on odd seconds when blinking. */
     fun setColonOn(on: Boolean) {
@@ -53,18 +75,16 @@ class SegmentedClockView(context: Context) : View(context) {
         val mask = if (digit in SEGMENTS.indices) SEGMENTS[digit] else 0
         val t = w * 0.14f
         val mid = h / 2f
-        val segments = arrayOf(
-            RectF(x + t, 0f, x + w - t, t),                    // a: top
-            RectF(x + w - t, t, x + w, mid - t / 2),           // b: top right
-            RectF(x + w - t, mid + t / 2, x + w, h - t),       // c: bottom right
-            RectF(x + t, h - t, x + w - t, h),                 // d: bottom
-            RectF(x, mid + t / 2, x + t, h - t),               // e: bottom left
-            RectF(x, t, x + t, mid - t / 2),                   // f: top left
-            RectF(x + t, mid - t / 2, x + w - t, mid + t / 2), // g: middle
-        )
-        segments.forEachIndexed { index, segment ->
+        segments[0].set(x + t, 0f, x + w - t, t)                    // a: top
+        segments[1].set(x + w - t, t, x + w, mid - t / 2)           // b: top right
+        segments[2].set(x + w - t, mid + t / 2, x + w, h - t)       // c: bottom right
+        segments[3].set(x + t, h - t, x + w - t, h)                 // d: bottom
+        segments[4].set(x, mid + t / 2, x + t, h - t)               // e: bottom left
+        segments[5].set(x, t, x + t, mid - t / 2)                   // f: top left
+        segments[6].set(x + t, mid - t / 2, x + w - t, mid + t / 2) // g: middle
+        for (index in 0 until 7) {
             val isLit = (mask and (1 shl index)) != 0
-            canvas.drawRect(segment, if (isLit) lit else ghost)
+            canvas.drawRect(segments[index], if (isLit) lit else ghost)
         }
     }
 

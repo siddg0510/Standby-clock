@@ -2,6 +2,7 @@ package com.example.standbyclock
 
 import android.Manifest
 import android.app.ActivityManager
+import android.animation.ValueAnimator
 import android.app.AlarmManager
 import android.content.Context
 import android.content.pm.PackageManager
@@ -9,6 +10,9 @@ import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
 import android.graphics.ImageDecoder
 import android.graphics.LinearGradient
 import android.graphics.Shader
@@ -32,6 +36,8 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -60,6 +66,14 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
     private val metrics = context.resources.displayMetrics
     private val portrait = metrics.heightPixels > metrics.widthPixels
     private var running = false
+    private var awake = true
+    private var shiftStep = -1
+    private var neonPulse: ValueAnimator? = null
+    private var tintKey = -1L
+    private var timeFadeToken = 0
+    private val fadeTargets get() = listOf<View>(column, duoRow, panelsView)
+    private val nightMatrix = ColorMatrix()
+    private val nightPaint = Paint()
     private var weatherFetchedAt = 0L
     private var weatherText = ""
     private var lastNight: Boolean? = null
@@ -85,7 +99,7 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
 
     private val refresh = object : Runnable {
         override fun run() {
-            update()
+            update(animate = true)
             // The clock only changes on minute boundaries, so wake only then.
             handler.postDelayed(this, MINUTE_MS - System.currentTimeMillis() % MINUTE_MS)
         }
@@ -133,7 +147,8 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
     private val pixelView = PixelClockView(context)
     private val stripingView = CalendarGridView(context).apply { bigDay = true }
     private val commandView = CommandCenter(context)
-    private val timeView = text(170f, Color.WHITE, Typeface.create("sans-serif-thin", Typeface.NORMAL))
+    // Tabular figures keep every digit the same width, so the time does not shift sideways as the minutes change.
+    private val timeView = text(170f, Color.WHITE, weighted("sans-serif", 100)).apply { fontFeatureSettings = "tnum" }
     private val panelView = TextView(context).apply {
         setTextColor(Color.WHITE)
         gravity = Gravity.CENTER
@@ -172,7 +187,6 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
         gravity = Gravity.CENTER
         visibility = View.GONE
     }
-    private val tintView = View(context).apply { visibility = View.GONE }
     private val checker = CheckerboardView(context)
     private val issView = IssMapView(context).apply { visibility = View.GONE }
     private val panelsView = PanelsView(context).apply { visibility = View.GONE }
@@ -220,7 +234,6 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
         root.addView(rightCorner, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END,
         ).apply { setMargins(margin, margin, margin, margin) })
-        root.addView(tintView, matchParent())
         root.addView(checker, matchParent())
         root.addView(panelsView, matchParent())
         root.addView(balanceView, matchParent())
@@ -263,12 +276,69 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
         sensorManager?.unregisterListener(lightListener)
         panelsView.pause()
         RadioPlayer.stop()
+        stopEffects()
+        cancelShift()
+        settleFade()
+        settleDigits()
+        updateNeonPulse()
+    }
+
+    /** The activity's sleep and wake: while asleep the frame loops stop, and wake brings them back. */
+    fun setAwake(isAwake: Boolean) {
+        awake = isAwake
+        if (isAwake) updateBackgrounds() else stopEffects()
+        updateNeonPulse()
+    }
+
+    /**
+     * The neon glow breathes between two radii with one reversing animator. It runs only while the Neon face with
+     * the pulse setting is shown, the clock is running and the screen is awake, and is cancelled otherwise.
+     */
+    private fun updateNeonPulse() {
+        val shouldRun = running && awake && currentFace() == Settings.FACE_NEON && settings.neonPulse
+        val current = neonPulse
+        if (!shouldRun) {
+            current?.cancel()
+            neonPulse = null
+            return
+        }
+        if (current != null) return
+        neonPulse = ValueAnimator.ofFloat(NEON_GLOW_DP * 0.5f, NEON_GLOW_DP).apply {
+            duration = NEON_PULSE_MS
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.REVERSE
+            interpolator = AccelerateDecelerateInterpolator()
+            addUpdateListener { timeView.setShadowLayer((it.animatedValue as Float) * metrics.density, 0f, 0f, NEON_GREEN) }
+            start()
+        }
+    }
+
+    private fun stopEffects() {
+        matrixView.setRunning(false)
+        snowView.setRunning(false)
+        canvasView.setRunning(false)
     }
 
     /** Re-reads the face settings and redraws, e.g. after the user changes the face. */
     fun reloadFace() {
         applyFace()
         update()
+    }
+
+    /** Fades the face containers in from transparent, over about 220 ms. Their translation belongs to the burn-in shift. */
+    fun fadeFaceIn() {
+        for (v in fadeTargets) {
+            v.animate().cancel()
+            v.alpha = 0f
+            v.animate().alpha(1f).setDuration(FACE_FADE_MS).start()
+        }
+    }
+
+    private fun settleFade() {
+        for (v in fadeTargets) {
+            v.animate().cancel()
+            v.alpha = 1f
+        }
     }
 
     private fun currentFace(): String = faceOverride ?: settings.face
@@ -318,6 +388,13 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
         }
         // The ambient wash shows only when a theme is chosen and pure black is off.
         val theme = Themes.byId(settings.themeId)
+        // Every face takes the theme's colours; with no theme each keeps its own.
+        analogView.setTheme(theme)
+        segmentedView.setTheme(theme)
+        radialView.setTheme(theme)
+        solarView.setTheme(theme)
+        retroflipView.setTheme(theme)
+        pixelView.setTheme(theme)
         ambientView.theme = theme
         ambientView.visibility = visibleIf(theme != null && !settings.pureBlack)
         matrixView.setRunning(false)
@@ -325,6 +402,7 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
         checker.visibility = visibleIf(settings.checkerboard)
         checker.setDim(settings.checkerDim)
         refreshPhoto()
+        updateNeonPulse()
     }
 
     /** Shows or hides the background effects and starts or stops their animation. */
@@ -333,12 +411,12 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
         val pure = settings.pureBlack
         val matrixOn = face == Settings.FACE_MATRIX && !pure
         matrixView.visibility = visibleIf(matrixOn)
-        matrixView.setRunning(matrixOn && running)
+        matrixView.setRunning(matrixOn && running && awake)
         snowView.visibility = visibleIf(settings.snow && !pure)
-        snowView.setRunning(settings.snow && !pure && running)
+        snowView.setRunning(settings.snow && !pure && running && awake)
         val canvasOn = settings.visualCanvas && !pure && NoisePlayer.isPlaying
         canvasView.visibility = visibleIf(canvasOn)
-        canvasView.setRunning(canvasOn && running)
+        canvasView.setRunning(canvasOn && running && awake)
     }
 
     /** Puts each view under the right container: one column, the command centre, or the duo's two columns. */
@@ -403,21 +481,21 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
         when {
             face == Settings.FACE_WORD -> {
                 timeView.textSize = 56f
-                timeView.typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+                timeView.typeface = weighted("sans-serif", 300)
             }
             face == Settings.FACE_NEON -> {
                 timeView.textSize = if (portrait) 120f else 170f
-                timeView.typeface = Typeface.create("sans-serif-thin", Typeface.NORMAL)
+                timeView.typeface = weighted("sans-serif", 100)
                 timeView.setTextColor(NEON_GREEN)
-                timeView.setShadowLayer(40f, 0f, 0f, NEON_GREEN)
+                timeView.setShadowLayer(NEON_GLOW_DP * metrics.density, 0f, 0f, NEON_GREEN)
             }
             face == Settings.FACE_BIG -> {
                 timeView.textSize = if (portrait) 130f else 250f
-                timeView.typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD)
+                timeView.typeface = weighted("sans-serif-condensed", 700)
             }
             face == Settings.FACE_DEMENTIA -> {
                 timeView.textSize = if (portrait) 80f else 110f
-                timeView.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+                timeView.typeface = weighted("sans-serif", 700)
             }
             face == Settings.FACE_ROMAN -> {
                 timeView.textSize = if (portrait) 64f else 110f
@@ -426,12 +504,12 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
             face == Settings.FACE_WEATHER -> {
                 val jumbo = settings.weatherLayout == "jumbo"
                 timeView.textSize = if (jumbo) (if (portrait) 110f else 200f) else (if (portrait) 80f else 120f)
-                timeView.typeface = Typeface.create("sans-serif-thin", Typeface.NORMAL)
+                timeView.typeface = weighted("sans-serif", 100)
                 panelView.textSize = if (jumbo) 48f else 26f
             }
             face == Settings.FACE_CHARGE -> {
                 timeView.textSize = if (portrait) 150f else 220f
-                timeView.typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+                timeView.typeface = weighted("sans-serif", 300)
                 applyBatteryStyle()
             }
             duo -> {
@@ -455,7 +533,7 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
         Settings.FONT_MONO -> Typeface.MONOSPACE
         Settings.FONT_ROUNDED -> Typeface.create("sans-serif-rounded", Typeface.NORMAL)
         Settings.FONT_CONDENSED -> Typeface.create("sans-serif-condensed", Typeface.NORMAL)
-        else -> Typeface.create(if (thin) "sans-serif-thin" else "sans-serif", Typeface.NORMAL)
+        else -> if (thin) weighted("sans-serif", 100) else Typeface.create("sans-serif", Typeface.NORMAL)
     }
 
     /** Colour and glow for the charging face, from the chosen battery style. */
@@ -466,12 +544,14 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
             else -> Triple(Color.WHITE, Color.WHITE, 0x0)
         }
         timeView.setTextColor(colour)
-        if (glow != 0) timeView.setShadowLayer(40f, 0f, 0f, glow) else timeView.setShadowLayer(12f, 0f, 0f, 0xCC000000.toInt())
+        if (glow != 0) timeView.setShadowLayer(NEON_GLOW_DP * metrics.density, 0f, 0f, glow) else timeView.setShadowLayer(12f, 0f, 0f, 0xCC000000.toInt())
         chargeBar.progressTintList = ColorStateList.valueOf(bar)
     }
 
-    private fun update() {
+    /** Redraws the whole clock. [animate] is true only for the minute refresh, so the digits change with a fade or fold. */
+    private fun update(animate: Boolean = false) {
         val now = System.currentTimeMillis()
+        val oldTime = timeView.text.toString()
         val calendar = Calendar.getInstance().apply { timeInMillis = now }
         val hour = calendar.get(Calendar.HOUR_OF_DAY)
         val minute = calendar.get(Calendar.MINUTE)
@@ -504,13 +584,14 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
             Settings.FACE_COMMAND -> updateCommand(clockText, hour, now, use24Hour)
             else -> timeView.text = clockText
         }
+        settleTimeText(oldTime, animate)
         analogView.setTime(hour, minute)
         analogView.setSubDial(if (settings.analogSubDial) clockText else null)
         segmentedView.setTime(hour, minute, use24Hour)
         radialView.setTime(hour, minute, use24Hour)
         radialView.setInvert(settings.radialInvert)
         solarView.setTime(hour, minute)
-        retroflipView.setTime(hour, minute, use24Hour)
+        retroflipView.setTime(hour, minute, use24Hour, animate && !settings.showSeconds)
         pixelView.setTime(hour, minute, use24Hour)
         stripingView.invalidate()
 
@@ -543,6 +624,34 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
         updateBalance()
         refreshIss()
         refreshNight()
+    }
+
+    /**
+     * The big time text was just set to its new value. On the minute refresh, when it differs from [oldTime], put the
+     * old text back and fade it out (120 ms), swap in the new text, and fade it in (180 ms). Everywhere else the new
+     * text stays as set. Any fade in flight is cancelled first and finished directly.
+     */
+    private fun settleTimeText(oldTime: String, animate: Boolean) {
+        timeFadeToken++
+        val token = timeFadeToken
+        timeView.animate().cancel()
+        timeView.alpha = 1f
+        val newTime = timeView.text.toString()
+        if (!animate || settings.showSeconds || timeView.visibility != View.VISIBLE || oldTime.isEmpty() || oldTime == newTime) return
+        timeView.text = oldTime
+        timeView.animate().alpha(0f).setDuration(TIME_FADE_OUT_MS).withEndAction {
+            if (token != timeFadeToken) return@withEndAction
+            timeView.text = newTime
+            timeView.animate().alpha(1f).setDuration(TIME_FADE_IN_MS).setInterpolator(DecelerateInterpolator()).start()
+        }.start()
+    }
+
+    /** Ends any digit change in flight with the final state showing. */
+    private fun settleDigits() {
+        timeFadeToken++
+        timeView.animate().cancel()
+        timeView.alpha = 1f
+        retroflipView.finishFold()
     }
 
     private fun updateCorners(now: Long) {
@@ -695,12 +804,45 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
             Settings.NIGHT_OFF -> false
             else -> scheduled || dark
         }
-        tintView.setBackgroundColor(withStrength(settings.tintColor, settings.tintStrength))
-        tintView.visibility = visibleIf(night && settings.redTintAtNight)
+        applyNightTint(night && settings.redTintAtNight)
         if (night != lastNight) {
             lastNight = night
             onMinute?.invoke(night)
         }
+    }
+
+    /**
+     * At night every pixel on the clock is re-coloured through its luminance, so the whole face turns red (or the
+     * chosen tint colour) and black stays black. The filter is a layer paint on [root], so it covers every face,
+     * photo and effect. In the day the layer is removed.
+     */
+    private fun applyNightTint(on: Boolean) {
+        val color = settings.tintColor
+        val strength = settings.tintStrength.coerceIn(0, 100)
+        val key = if (on) color.toLong() * 101L + strength else -1L
+        if (key == tintKey) return
+        tintKey = key
+        if (!on) {
+            root.setLayerType(View.LAYER_TYPE_NONE, null)
+            return
+        }
+        // A square-root curve makes the default 33% a clear tint rather than a faint one.
+        val t = Math.sqrt(strength / 100.0).toFloat()
+        val tr = Color.red(color) / 255f
+        val tg = Color.green(color) / 255f
+        val tb = Color.blue(color) / 255f
+        val lr = 0.2126f * t
+        val lg = 0.7152f * t
+        val lb = 0.0722f * t
+        val keep = 1f - t
+        nightMatrix.set(floatArrayOf(
+            keep + tr * lr, tr * lg, tr * lb, 0f, 0f,
+            tg * lr, keep + tg * lg, tg * lb, 0f, 0f,
+            tb * lr, tb * lg, keep + tb * lb, 0f, 0f,
+            0f, 0f, 0f, 1f, 0f,
+        ))
+        nightPaint.colorFilter = ColorMatrixColorFilter(nightMatrix)
+        root.setLayerType(View.LAYER_TYPE_HARDWARE, nightPaint)
     }
 
     private fun withStrength(color: Int, percent: Int): Int {
@@ -846,8 +988,30 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
      */
     private fun shiftForBurnIn() {
         val step = ((System.currentTimeMillis() / MINUTE_MS) % 9).toInt()
-        column.translationX = ((step % 3) - 1) * metrics.density * 8f
-        column.translationY = ((step / 3) - 1) * metrics.density * 6f
+        if (step == shiftStep) return
+        val first = shiftStep < 0
+        shiftStep = step
+        val x = ((step % 3) - 1) * metrics.density * 8f
+        val y = ((step / 3) - 1) * metrics.density * 6f
+        column.animate().cancel()
+        if (first) {
+            column.translationX = x
+            column.translationY = y
+        } else {
+            // Glide to the next position so the block never visibly jumps.
+            column.animate()
+                .translationX(x)
+                .translationY(y)
+                .setDuration(SHIFT_MS)
+                .setInterpolator(AccelerateDecelerateInterpolator())
+                .start()
+        }
+    }
+
+    /** Stops a burn-in glide in flight and lets the next start place the block directly. */
+    private fun cancelShift() {
+        column.animate().cancel()
+        shiftStep = -1
     }
 
     /**
@@ -858,7 +1022,6 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
         val face = currentFace()
         return settings.showSeconds ||
             settings.cornerLeft == Complications.TIME_SEC || settings.cornerRight == Complications.TIME_SEC ||
-            (face == Settings.FACE_NEON && settings.neonPulse) ||
             (face == Settings.FACE_SEGMENTED && settings.segmentBlink) ||
             (face == Settings.FACE_PANELS && settings.panelRotateSeconds > 0) ||
             face == Settings.FACE_PHOTO ||
@@ -872,14 +1035,11 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
         return DateFormat.format(if (settings.showSeconds) "$pattern:ss" else pattern, now).toString()
     }
 
-    /** Work that runs each second: seconds on the digital faces, the neon pulse, the colon, and the panels. */
+    /** Work that runs each second: seconds on the digital faces, the colon, and the panels. */
     private fun tickFace(now: Long) {
         val face = currentFace()
         if (settings.showSeconds && face in SECOND_FACES) {
             timeView.text = clockString(now, DateFormat.is24HourFormat(context))
-        }
-        if (face == Settings.FACE_NEON && settings.neonPulse) {
-            timeView.setShadowLayer(if ((now / 1000) % 2 == 0L) 40f else 20f, 0f, 0f, NEON_GREEN)
         }
         if (face == Settings.FACE_SEGMENTED) {
             segmentedView.setColonOn(!settings.segmentBlink || (now / 1000) % 2 == 0L)
@@ -905,14 +1065,22 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
     private fun updateGradient() {
         val face = currentFace()
         val base = Settings.PALETTES.getOrNull(settings.clockPalette)?.second ?: Color.WHITE
+        val theme = Themes.byId(settings.themeId)
+        val themeGradient = theme != null && theme.gradient.size >= 2 && face != Settings.FACE_CHARGE && face != Settings.FACE_NEON
         val plain = !settings.clockGradient || face == Settings.FACE_CHARGE || face == Settings.FACE_NEON || timeView.height == 0
-        timeView.paint.shader = if (plain) {
+        timeView.paint.shader = if (themeGradient && timeView.height > 0) {
+            Themes.digitShader(theme, 0f, timeView.height.toFloat())
+        } else if (plain) {
             null
         } else {
             LinearGradient(0f, 0f, 0f, timeView.height.toFloat(), base, mix(base, Color.WHITE, 0.45f), Shader.TileMode.CLAMP)
         }
         timeView.invalidate()
     }
+
+    /** A system family at an explicit weight (100 thin, 300 light, 700 bold), not italic. */
+    private fun weighted(family: String, weight: Int): Typeface =
+        Typeface.create(Typeface.create(family, Typeface.NORMAL), weight, false)
 
     private fun mix(from: Int, to: Int, amount: Float): Int = Color.rgb(
         (Color.red(from) + (Color.red(to) - Color.red(from)) * amount).toInt(),
@@ -1004,6 +1172,12 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
 
     private companion object {
         const val MINUTE_MS = 60_000L
+        const val SHIFT_MS = 800L
+        const val FACE_FADE_MS = 220L
+        const val TIME_FADE_OUT_MS = 120L
+        const val TIME_FADE_IN_MS = 180L
+        const val NEON_GLOW_DP = 16f
+        const val NEON_PULSE_MS = 1000L
         /** Faces that show seconds when the setting is on. */
         val SECOND_FACES = setOf(Settings.FACE_DIGITAL, Settings.FACE_BIG, Settings.FACE_NEON, Settings.FACE_MATRIX)
         /** Gravity for each overlay position: top-left, top-centre, top-right, bottom-left, bottom-centre, bottom-right. */
