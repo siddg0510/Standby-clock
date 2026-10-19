@@ -6,7 +6,7 @@ package com.example.standbyclock
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
+import android.content.res.ColorStateList
 import android.text.TextUtils
 import android.text.format.DateFormat
 import android.view.Gravity
@@ -15,14 +15,14 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 
-/** A card with a small heading and a list of up to three upcoming events, each in a rounded pill. */
+/** A card with a small heading and a list of up to three upcoming events, left-aligned and without a fill. */
 class AgendaCard(context: Context) : LinearLayout(context) {
 
     private val rows = LinearLayout(context).apply { orientation = VERTICAL }
 
     init {
         orientation = VERTICAL
-        gravity = Gravity.CENTER_HORIZONTAL
+        gravity = Gravity.START
         addView(heading(context, "Calendar"))
         addView(rows, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
     }
@@ -34,8 +34,10 @@ class AgendaCard(context: Context) : LinearLayout(context) {
         if (events.isEmpty()) {
             rows.addView(TextView(context).apply {
                 text = "No events today"
-                setTextColor(0xFFBBBBBB.toInt())
-                gravity = Gravity.CENTER
+                setTextColor(0xFF8E8E93.toInt())
+                textSize = 20f
+                typeface = Typeface.create("sans-serif", Typeface.BOLD)
+                gravity = Gravity.START
             })
             return
         }
@@ -51,27 +53,29 @@ class AgendaCard(context: Context) : LinearLayout(context) {
 class MusicCard(context: Context) : LinearLayout(context) {
 
     private val title = TextView(context).apply {
-        textSize = 20f
+        textSize = 40f
         setTextColor(Color.WHITE)
-        typeface = Typeface.DEFAULT_BOLD
-        maxLines = 1
+        typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        maxLines = 2
         ellipsize = TextUtils.TruncateAt.END
-        gravity = Gravity.CENTER
+        gravity = Gravity.START
     }
     private val artist = TextView(context).apply {
-        textSize = 15f
-        setTextColor(0xFFB3B3B3.toInt())
+        textSize = 20f
+        setTextColor(0xFF8E8E93.toInt())
         maxLines = 1
         ellipsize = TextUtils.TruncateAt.END
-        gravity = Gravity.CENTER
+        gravity = Gravity.START
     }
     private val progress = ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal).apply {
         max = 1000
+        progressTintList = ColorStateList.valueOf(Color.WHITE)
+        progressBackgroundTintList = ColorStateList.valueOf(0xFF3A3A3C.toInt())
     }
     private val status = TextView(context).apply {
-        textSize = 12f
-        setTextColor(0xFF8A8A8A.toInt())
-        gravity = Gravity.CENTER
+        textSize = 15f
+        setTextColor(0xFF8E8E93.toInt())
+        gravity = Gravity.START
     }
     private val playPause = Button(context).apply {
         text = "Play"
@@ -83,19 +87,19 @@ class MusicCard(context: Context) : LinearLayout(context) {
 
     init {
         orientation = VERTICAL
-        gravity = Gravity.CENTER_HORIZONTAL
+        gravity = Gravity.START
         addView(heading(context, "Music"))
         addView(title, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(artist, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(progress, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = 12 })
         val controls = LinearLayout(context).apply {
             orientation = HORIZONTAL
-            gravity = Gravity.CENTER
+            gravity = Gravity.START
             addView(button(context, "Prev") { MusicSession.previous(); update() })
             addView(playPause)
             addView(button(context, "Next") { MusicSession.next(); update() })
         }
-        addView(controls, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { topMargin = 8 })
+        addView(controls, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = 8 })
         addView(status, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = 6 })
     }
 
@@ -120,28 +124,26 @@ class MusicCard(context: Context) : LinearLayout(context) {
         }
 }
 
-private fun heading(context: Context, label: String): TextView = TextView(context).apply {
-    text = label
-    textSize = 13f
-    setTextColor(0xFFBBBBBB.toInt())
-    typeface = Typeface.DEFAULT_BOLD
-    gravity = Gravity.CENTER
-}
-
-private fun pill(context: Context, label: String): TextView = TextView(context).apply {
+/** The card label: 15sp semibold, #8E8E93, top-left. */
+internal fun heading(context: Context, label: String): TextView = TextView(context).apply {
     text = label
     textSize = 15f
+    setTextColor(0xFF8E8E93.toInt())
+    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+    gravity = Gravity.START
+}
+
+/** One event row: bold white text, left-aligned, no pill and no fill. */
+private fun pill(context: Context, label: String): TextView = TextView(context).apply {
+    text = label
+    textSize = 20f
     setTextColor(Color.WHITE)
+    typeface = Typeface.create("sans-serif", Typeface.BOLD)
     maxLines = 1
     ellipsize = TextUtils.TruncateAt.END
+    gravity = Gravity.START
     val dp = context.resources.displayMetrics.density
-    setPadding((14 * dp).toInt(), (8 * dp).toInt(), (14 * dp).toInt(), (8 * dp).toInt())
-    background = GradientDrawable().apply {
-        shape = GradientDrawable.RECTANGLE
-        cornerRadius = 999f
-        setColor(0x14FFFFFF)
-    }
     layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-        bottomMargin = (6 * dp).toInt()
+        topMargin = (8 * dp).toInt()
     }
 }

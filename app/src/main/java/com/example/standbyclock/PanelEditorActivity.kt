@@ -5,44 +5,39 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProviderInfo
 import android.content.Intent
 import android.os.Bundle
-import android.text.Editable
-import android.text.TextWatcher
 import android.view.View
-import android.widget.AdapterView
-import android.widget.ArrayAdapter
-import android.widget.Button
-import android.widget.EditText
+import android.view.ViewGroup
 import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.SeekBar
-import android.widget.Spinner
-import android.widget.Switch
-import android.widget.TextView
-import android.widget.Toast
 
 /**
  * Edit mode for the Panels face: how many panels, their sizes, what each one shows (built-in items
  * and home-screen widgets), the rotation and yoga options, and the look of each panel.
- * Every change is saved straight away.
+ * It uses the same components as the settings pages, and every change is applied straight away.
  */
 class PanelEditorActivity : Activity() {
 
     private lateinit var settings: Settings
+    private lateinit var ui: SettingsUi
+    private lateinit var scaffold: SettingsScaffold
     private val stacks = mutableListOf<MutableList<String>>()
     private val providers: List<AppWidgetProviderInfo> by lazy {
         AppWidgetManager.getInstance(this).installedProviders.sortedBy { it.loadLabel(packageManager) }
     }
-    private lateinit var results: LinearLayout
-    private lateinit var panelChooser: Spinner
-    private lateinit var itemsHolder: LinearLayout
+    private var searchBox: View? = null
+    private var searchText = ""
+    private var results: LinearLayout? = null
     private var addToPanel = 0
     private var pendingWidgetId = -1
+    private var note: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settings = Settings(this)
+        ui = SettingsUi(this)
+        scaffold = SettingsScaffold(this, ui)
         loadStacks()
-        setContentView(buildUi())
+        setContentView(scaffold.root)
+        render()
     }
 
     private fun loadStacks() {
@@ -54,103 +49,60 @@ class PanelEditorActivity : Activity() {
         settings.savePanelStacks(stacks.map { it.toList() })
     }
 
-    private fun buildUi(): View {
-        val pad = (16 * resources.displayMetrics.density).toInt()
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad, pad, pad)
-        }
+    /** Rebuilds the page, keeping the scroll position. */
+    private fun render() {
+        scaffold.show("Panels", "Widgets", buildViews(), { finish() }, 0, scaffold.scrollPosition())
+    }
 
-        content.addView(section("Layout"))
-        val counts = intArrayOf(2, 3, 4)
-        content.addView(label("Number of panels"))
-        content.addView(spinner(arrayOf("Two", "Three", "Four"), counts.indexOf(settings.panelCount)) {
+    private fun buildViews(): List<View> {
+        val views = mutableListOf<View>()
+        val count = settings.panelCount
+        if (addToPanel >= count) addToPanel = 0
+
+        // Layout
+        val counts = listOf(2, 3, 4)
+        val weights = settings.panelWeights()
+        val layoutRows = mutableListOf<View>()
+        layoutRows += ui.segmentedRow("Number of panels", listOf("Two", "Three", "Four"), counts.indexOf(count)) {
             val chosen = counts[it]
             if (chosen != settings.panelCount) {
                 settings.panelCount = chosen
                 while (stacks.size < chosen) stacks.add(mutableListOf())
                 persist()
-                recreate()
+                render()
             }
-        })
-        content.addView(label("Panel sizes, as relative numbers separated by commas (for example 2,1,1). Each panel uses its number of the total."))
-        val split = EditText(this).apply {
-            setSingleLine()
-            setText(settings.panelSplit)
         }
-        content.addView(split)
-        content.addView(button("Save panel sizes") {
-            val parsed = split.text.toString().split(",").mapNotNull { it.trim().toFloatOrNull()?.takeIf { w -> w > 0f } }
-            if (parsed.size < settings.panelCount) {
-                Toast.makeText(this, "Enter one number for each panel", Toast.LENGTH_SHORT).show()
-            } else {
-                settings.panelSplit = parsed.joinToString(",")
-                Toast.makeText(this, "Panel sizes saved", Toast.LENGTH_SHORT).show()
+        for (index in 0 until count) {
+            layoutRows += ui.sliderRow("Panel ${index + 1} size", 1, 6, weights[index].toInt().coerceIn(1, 6), { "$it" }) { value ->
+                val updated = settings.panelWeights().toMutableList()
+                updated[index] = value.toFloat()
+                settings.panelSplit = updated.joinToString(",") { it.toInt().toString() }
             }
-        })
+        }
         val rotateValues = intArrayOf(0, 5, 10, 30, 60)
-        content.addView(label("Stacked items move on after"))
-        content.addView(spinner(
-            arrayOf("Hold the first item", "5 seconds", "10 seconds", "30 seconds", "1 minute"),
-            rotateValues.indexOf(settings.panelRotateSeconds).coerceAtLeast(0),
-        ) { settings.panelRotateSeconds = rotateValues[it] })
-        content.addView(toggle("Yoga layout: the first panel grows while nothing is playing", settings.panelYoga) {
+        val rotateLabels = listOf("Hold first", "5 seconds", "10 seconds", "30 seconds", "1 minute")
+        layoutRows += ui.sliderRow(
+            "Move on after", 0, rotateValues.lastIndex,
+            rotateValues.indexOf(settings.panelRotateSeconds).coerceAtLeast(0), { rotateLabels[it] },
+        ) { settings.panelRotateSeconds = rotateValues[it] }
+        layoutRows += ui.switchRow("Yoga layout", "The first panel grows while nothing is playing", settings.panelYoga) {
             settings.panelYoga = it
-        })
-
-        content.addView(section("Panel contents"))
-        content.addView(label("Each panel shows one item, or a stack that moves through its items. Use the arrows to reorder and the cross to remove."))
-        itemsHolder = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        content.addView(itemsHolder)
-        renderItems()
-
-        content.addView(section("Add an item"))
-        content.addView(label("Search built-in items and installed home-screen widgets."))
-        panelChooser = spinner(
-            Array(settings.panelCount) { "Panel ${it + 1}" },
-            addToPanel,
-        ) { addToPanel = it }
-        content.addView(panelChooser)
-        val search = EditText(this).apply {
-            hint = "Search, for example weather or calendar"
-            setSingleLine()
         }
-        content.addView(search)
-        results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        content.addView(results)
-        search.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
-            override fun afterTextChanged(s: Editable?) = showResults(s?.toString().orEmpty())
-        })
-        showResults("")
+        views += ui.section(
+            "Layout",
+            "Panel sizes are relative: each panel takes its number out of the total. Stacked items move on after the chosen time.",
+            layoutRows,
+        )
 
-        content.addView(section("Look of each panel"))
-        for (index in 0 until settings.panelCount) {
-            content.addView(label("Panel ${index + 1}"))
-            content.addView(styleControls(index))
-        }
-
-        content.addView(section("Panel layout tips"))
-        content.addView(label("Widgets are drawn at the size the panel gives them. Some widgets need more room; a larger panel shows more of them."))
-
-        return ScrollView(this).apply { addView(content) }
-    }
-
-    /** One row per item in each panel, with reorder and remove buttons. */
-    private fun renderItems() {
-        itemsHolder.removeAllViews()
-        stacks.take(settings.panelCount).forEachIndexed { panel, items ->
-            itemsHolder.addView(section("Panel ${panel + 1}"))
-            if (items.isEmpty()) itemsHolder.addView(label("Empty. The panel stays blank."))
+        // Contents
+        stacks.take(count).forEachIndexed { panel, items ->
+            val rows = mutableListOf<View>()
+            if (items.isEmpty()) rows += ui.emptyRow("Empty. The panel stays blank.")
             items.forEachIndexed { index, id ->
-                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-                row.addView(label(itemLabel(id)).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                })
-                row.addView(button("↑") { move(panel, index, -1) })
-                row.addView(button("↓") { move(panel, index, 1) })
-                row.addView(button("✕") {
+                val actions = mutableListOf<Pair<String, () -> Unit>>()
+                if (index > 0) actions += "Up" to { move(panel, index, -1) }
+                if (index < items.lastIndex) actions += "Down" to { move(panel, index, 1) }
+                actions += "Remove" to {
                     val removed = stacks[panel].removeAt(index)
                     if (removed.startsWith(PanelsView.WIDGET_PREFIX)) {
                         removed.removePrefix(PanelsView.WIDGET_PREFIX).toIntOrNull()?.let {
@@ -158,11 +110,53 @@ class PanelEditorActivity : Activity() {
                         }
                     }
                     persist()
-                    renderItems()
-                })
-                itemsHolder.addView(row)
+                    render()
+                }
+                rows += ui.itemRow(itemLabel(id), null, actions)
             }
+            views += ui.section(
+                "Panel ${panel + 1}",
+                if (panel == 0) "Each panel shows one item, or a stack that moves through its items." else null,
+                rows,
+            )
         }
+
+        // Add an item
+        views += ui.section(
+            "Add an item",
+            note ?: "Search built-in items and installed home-screen widgets.",
+            listOf(ui.segmentedRow("Add to", List(count) { "Panel ${it + 1}" }, addToPanel) { addToPanel = it }),
+        )
+        if (searchBox == null) {
+            searchBox = ui.searchBar("") {
+                searchText = it
+                showResults()
+            }.first
+        }
+        views += searchBox!!
+        results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        views += results!!
+        showResults()
+
+        // Look of each panel
+        for (index in 0 until count) {
+            val style = settings.panelStyle(index)
+            fun update(change: (PanelStyle) -> PanelStyle) = settings.setPanelStyle(index, change(settings.panelStyle(index)))
+            views += ui.section("Panel ${index + 1} look", null, listOf(
+                ui.sliderRow("Corner roundness", 0, 40, style.corner, { "$it dp" }) { v -> update { it.copy(corner = v) } },
+                ui.sliderRow("Fill opacity", 0, 100, style.alpha) { v -> update { it.copy(alpha = v) } },
+                ui.swatchRow(
+                    "Border colour",
+                    Settings.BORDER_COLOURS.map { it.first },
+                    Settings.BORDER_COLOURS.map { it.second },
+                    style.border,
+                ) { v -> update { it.copy(border = v) } },
+                ui.sliderRow("Border thickness", 0, 6, style.thickness, { "$it dp" }) { v -> update { it.copy(thickness = v) } },
+                ui.sliderRow("Text zoom", 50, 200, style.zoom) { v -> update { it.copy(zoom = v) } },
+                ui.sliderRow("Spacing around the panel", 0, 40, style.spacing, { "$it dp" }) { v -> update { it.copy(spacing = v) } },
+            ))
+        }
+        return views
     }
 
     private fun move(panel: Int, index: Int, step: Int) {
@@ -171,35 +165,43 @@ class PanelEditorActivity : Activity() {
         if (target !in items.indices) return
         items[index] = items[target].also { items[target] = items[index] }
         persist()
-        renderItems()
+        render()
     }
 
     private fun itemLabel(id: String): String {
         if (!id.startsWith(PanelsView.WIDGET_PREFIX)) {
-            return "• " + (Settings.PANEL_ITEMS.firstOrNull { it.first == id }?.second ?: id)
+            return Settings.PANEL_ITEMS.firstOrNull { it.first == id }?.second ?: id
         }
         val widget = id.removePrefix(PanelsView.WIDGET_PREFIX).toIntOrNull()
         val info = widget?.let { AppWidgetManager.getInstance(this).getAppWidgetInfo(it) }
-        return "• Widget: " + (info?.loadLabel(packageManager) ?: "not installed")
+        return "Widget: " + (info?.loadLabel(packageManager) ?: "not installed")
     }
 
     /** Matches built-in items and installed widgets against the search text. */
-    private fun showResults(query: String) {
-        results.removeAllViews()
-        val needle = query.trim().lowercase()
+    private fun showResults() {
+        val holder = results ?: return
+        holder.removeAllViews()
+        val needle = searchText.trim().lowercase()
+        val rows = mutableListOf<View>()
         Settings.PANEL_ITEMS.filter { needle.isEmpty() || it.second.lowercase().contains(needle) }.forEach { (id, name) ->
-            results.addView(button("Add $name") { addItem(id) })
+            rows += ui.actionRow("Add $name", plus = true) { addItem(id) }
         }
-        if (needle.isEmpty()) return
-        providers.filter { it.loadLabel(packageManager).lowercase().contains(needle) }.take(15).forEach { provider ->
-            results.addView(button("Add widget: ${provider.loadLabel(packageManager)}") { bindProvider(provider) })
+        if (needle.isNotEmpty()) {
+            providers.filter { it.loadLabel(packageManager).lowercase().contains(needle) }.take(15).forEach { provider ->
+                rows += ui.actionRow("Add widget: ${provider.loadLabel(packageManager)}", plus = true) { bindProvider(provider) }
+            }
         }
+        holder.addView(
+            if (rows.isEmpty()) ui.note("Nothing matches \"${searchText.trim()}\".") else ui.section(null, null, rows),
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT),
+        )
     }
 
     private fun addItem(id: String) {
         stacks[addToPanel] += id
+        note = null
         persist()
-        renderItems()
+        render()
     }
 
     /** Binds a widget to a new id, asking the system for permission if needed, then configures it. */
@@ -232,10 +234,13 @@ class PanelEditorActivity : Activity() {
 
     private fun addWidget(id: Int) {
         stacks[addToPanel] += PanelsView.WIDGET_PREFIX + id
+        note = null
         persist()
-        renderItems()
+        render()
     }
 
+    @Deprecated("Deprecated in Java")
+    @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         when (requestCode) {
@@ -243,7 +248,8 @@ class PanelEditorActivity : Activity() {
                 afterBind(pendingWidgetId)
             } else {
                 WidgetHostHolder.get(this).deleteAppWidgetId(pendingWidgetId)
-                Toast.makeText(this, "Widget was not allowed", Toast.LENGTH_SHORT).show()
+                note = "That widget was not allowed to be added."
+                render()
             }
             REQUEST_CONFIGURE -> if (resultCode == RESULT_OK) {
                 addWidget(pendingWidgetId)
@@ -252,82 +258,6 @@ class PanelEditorActivity : Activity() {
             }
         }
     }
-
-    /** Corner, opacity, border, thickness, zoom and spacing for one panel. */
-    private fun styleControls(index: Int): LinearLayout {
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val style = settings.panelStyle(index)
-        fun update(change: (PanelStyle) -> PanelStyle) = settings.setPanelStyle(index, change(settings.panelStyle(index)))
-        box.addView(slider("Corner roundness (dp)", 0, 40, style.corner) { value -> update { it.copy(corner = value) } })
-        box.addView(slider("Opacity (%)", 0, 100, style.alpha) { value -> update { it.copy(alpha = value) } })
-        box.addView(label("Border colour"))
-        box.addView(spinner(Settings.BORDER_COLOURS.map { it.first }.toTypedArray(), style.border) { value ->
-            update { it.copy(border = value) }
-        })
-        box.addView(slider("Border thickness (dp)", 0, 6, style.thickness) { value -> update { it.copy(thickness = value) } })
-        box.addView(slider("Text zoom (%)", 50, 200, style.zoom) { value -> update { it.copy(zoom = value) } })
-        box.addView(slider("Spacing around the panel (dp)", 0, 40, style.spacing) { value -> update { it.copy(spacing = value) } })
-        return box
-    }
-
-    private fun section(text: String): TextView = label(text).apply {
-        textSize = 20f
-        setPadding(0, (24 * resources.displayMetrics.density).toInt(), 0, 0)
-    }
-
-    private fun label(text: String): TextView = TextView(this).apply {
-        this.text = text
-        textSize = 16f
-        setTextColor(0xFFFFFFFF.toInt())
-    }
-
-    private fun button(text: String, onClick: () -> Unit): Button = Button(this).apply {
-        this.text = text
-        setOnClickListener { onClick() }
-    }
-
-    private fun toggle(text: String, checked: Boolean, onChange: (Boolean) -> Unit): Switch =
-        Switch(this).apply {
-            this.text = text
-            isChecked = checked
-            setOnCheckedChangeListener { _, on -> onChange(on) }
-        }
-
-    private fun slider(name: String, low: Int, high: Int, current: Int, onChange: (Int) -> Unit): LinearLayout {
-        val readout = label("$name: $current")
-        val bar = SeekBar(this).apply {
-            max = high - low
-            progress = current - low
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
-                    val value = progress + low
-                    readout.text = "$name: $value"
-                    if (fromUser) onChange(value)
-                }
-
-                override fun onStartTrackingTouch(seekBar: SeekBar) = Unit
-                override fun onStopTrackingTouch(seekBar: SeekBar) = Unit
-            })
-        }
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(readout)
-            addView(bar)
-        }
-    }
-
-    private fun spinner(labels: Array<String>, selected: Int, onSelect: (Int) -> Unit): Spinner =
-        Spinner(this).apply {
-            adapter = ArrayAdapter(this@PanelEditorActivity, android.R.layout.simple_spinner_item, labels)
-            setSelection(selected.coerceAtLeast(0), false)
-            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                    onSelect(position)
-                }
-
-                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
-            }
-        }
 
     companion object {
         private const val REQUEST_BIND = 21

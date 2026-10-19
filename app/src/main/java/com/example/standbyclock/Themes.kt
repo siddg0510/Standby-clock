@@ -9,7 +9,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
-import android.graphics.RectF
 import android.graphics.Shader
 import android.view.View
 
@@ -72,8 +71,8 @@ object Themes {
 }
 
 /**
- * A diagonal gradient from the theme's background towards black, with nine faint arcs in the accent
- * colour across the top. The arcs are static, so the view draws once per change and costs nothing else.
+ * A diagonal gradient from the theme's background towards black. It is only shown when a theme is chosen
+ * (the clock hides it otherwise), and it is static, so the view draws once per change and costs nothing else.
  */
 class AmbientView(context: Context) : View(context) {
 
@@ -85,13 +84,8 @@ class AmbientView(context: Context) : View(context) {
         }
 
     private val fill = Paint()
-    private val arc = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 2f * resources.displayMetrics.density
-    }
-    private val arcBounds = RectF()
 
-    /** The gradient and arc colour only depend on the size and the theme, so they are rebuilt just when those change. */
+    /** The gradient only depends on the size and the theme, so it is rebuilt just when those change. */
     private fun rebuild() {
         val theme = theme
         if (theme == null || width <= 0 || height <= 0) {
@@ -104,7 +98,6 @@ class AmbientView(context: Context) : View(context) {
             null,
             Shader.TileMode.CLAMP,
         )
-        arc.color = Color.argb(10, Color.red(theme.accent), Color.green(theme.accent), Color.blue(theme.accent))
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldW: Int, oldH: Int) {
@@ -115,17 +108,7 @@ class AmbientView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (theme == null || fill.shader == null) return
-        val w = width.toFloat()
-        val h = height.toFloat()
-        val density = resources.displayMetrics.density
-        canvas.drawRect(0f, 0f, w, h, fill)
-        for (i in 0 until 9) {
-            val cx = w * (0.12f + i * 0.09f)
-            val cy = h * 0.14f
-            val r = (90f + i * 26f) * density
-            arcBounds.set(cx - r, cy - r, cx + r, cy + r)
-            canvas.drawArc(arcBounds, 27f, 162f, false, arc)
-        }
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fill)
     }
 }
 

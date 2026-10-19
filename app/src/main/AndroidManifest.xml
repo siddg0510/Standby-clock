@@ -32,7 +32,7 @@
             android:name=".SettingsActivity"
             android:exported="false"
             android:label="Standby Clock settings"
-            android:theme="@android:style/Theme.DeviceDefault" />
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
 
         <activity
             android:name=".ToolsActivity"
@@ -45,12 +45,6 @@
             android:exported="false"
             android:label="Timer and stopwatch"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
-
-        <activity
-            android:name=".MoreSettingsActivity"
-            android:exported="false"
-            android:label="More settings"
-            android:theme="@android:style/Theme.DeviceDefault" />
 
         <activity
             android:name=".OverviewActivity"
@@ -68,7 +62,7 @@
             android:name=".PanelEditorActivity"
             android:exported="false"
             android:label="Panels"
-            android:theme="@android:style/Theme.DeviceDefault" />
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
 
         <activity
             android:name=".SimonActivity"

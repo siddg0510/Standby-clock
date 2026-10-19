@@ -1,6 +1,5 @@
 package com.example.standbyclock
 
-import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
@@ -11,25 +10,16 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.view.View
-import android.view.animation.AccelerateDecelerateInterpolator
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.random.Random
 
-/**
- * Flip-card digits: four tiles with a split line, like a mechanical flip clock. When a digit changes the tile folds:
- * the top half of the old digit swings down over the new one, then the new digit's bottom half swings down over the
- * old one. One animator of about 300 ms drives the fold; each half is a clipped, vertically scaled draw.
- */
+/** Flip-card digits: four static tiles with a split line, like a mechanical flip clock. The digits change without a fold. */
 class RetroflipView(context: Context) : View(context) {
 
     private var digits = "    "
-    private var previous = "    "
-    /** 0 at the start of a fold and 1 when it is done (or when nothing is folding). */
-    private var fold = 1f
-    private var folder: ValueAnimator? = null
-    private val tile = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF1B1B1B.toInt() }
+    private val tile = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF141416.toInt() }
     private val seam = Paint().apply { color = Color.BLACK }
     private val glyph = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
@@ -67,7 +57,7 @@ class RetroflipView(context: Context) : View(context) {
             val (cardColor, digitColor) = when (style) {
                 1 -> 0xFFEDEDED.toInt() to Color.BLACK
                 2 -> 0xFF3A2A1A.toInt() to 0xFFFFD58A.toInt()
-                else -> 0xFF1B1B1B.toInt() to Color.WHITE
+                else -> 0xFF141416.toInt() to Color.WHITE
             }
             tile.color = cardColor
             glyph.color = digitColor
@@ -82,79 +72,19 @@ class RetroflipView(context: Context) : View(context) {
         glyph.shader = Themes.digitShader(theme, 0f, h.toFloat())
     }
 
-    /**
-     * Four characters: two hour digits (a leading space for a blank) then two minute digits. With [animate] the
-     * tiles whose digit changed fold; otherwise the new digits appear at once and any fold in flight is dropped.
-     */
-    fun setTime(hour24: Int, minute: Int, use24Hour: Boolean, animate: Boolean = false) {
+    /** Four characters: two hour digits (a leading space for a blank) then two minute digits. */
+    fun setTime(hour24: Int, minute: Int, use24Hour: Boolean) {
         val hour = if (use24Hour) hour24 else (hour24 % 12).let { if (it == 0) 12 else it }
         val hourText = if (use24Hour || hour >= 10) "%02d".format(hour) else " $hour"
         val next = hourText + "%02d".format(minute)
         if (next == digits) return
-        folder?.cancel()
-        folder = null
-        if (animate && isAttachedToWindow) {
-            previous = digits
-            digits = next
-            fold = 0f
-            folder = ValueAnimator.ofFloat(0f, 1f).apply {
-                duration = FOLD_MS
-                interpolator = AccelerateDecelerateInterpolator()
-                addUpdateListener {
-                    fold = it.animatedValue as Float
-                    invalidate()
-                }
-                start()
-            }
-        } else {
-            digits = next
-            previous = next
-            fold = 1f
-        }
+        digits = next
         invalidate()
-    }
-
-    /** Ends a fold in flight with the new digits showing. */
-    fun finishFold() {
-        folder?.cancel()
-        folder = null
-        previous = digits
-        fold = 1f
-        invalidate()
-    }
-
-    override fun onVisibilityAggregated(isVisible: Boolean) {
-        super.onVisibilityAggregated(isVisible)
-        if (!isVisible) finishFold()
-    }
-
-    override fun onDetachedFromWindow() {
-        finishFold()
-        super.onDetachedFromWindow()
     }
 
     private fun drawGlyph(canvas: Canvas, ch: Char, x: Float, baseline: Float) {
         charBuf[0] = ch
         canvas.drawText(charBuf, 0, 1, x, baseline, glyph)
-    }
-
-    /** One half of a tile (card and digit), squashed vertically towards the seam by [scaleY]. */
-    private fun drawHalf(
-        canvas: Canvas, left: Float, tileWidth: Float, tileHeight: Float, radius: Float,
-        ch: Char, baseline: Float, top: Boolean, scaleY: Float,
-    ) {
-        if (scaleY <= 0.01f) return
-        canvas.save()
-        canvas.scale(1f, scaleY, left + tileWidth / 2, tileHeight / 2)
-        if (top) {
-            canvas.clipRect(left, 0f, left + tileWidth, tileHeight / 2)
-        } else {
-            canvas.clipRect(left, tileHeight / 2, left + tileWidth, tileHeight)
-        }
-        rect.set(left, 0f, left + tileWidth, tileHeight)
-        if (opaque) canvas.drawRoundRect(rect, radius, radius, tile)
-        drawGlyph(canvas, ch, left + tileWidth / 2, baseline)
-        canvas.restore()
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -168,27 +98,13 @@ class RetroflipView(context: Context) : View(context) {
         val baseline = tileHeight / 2 - (fontMetrics.ascent + fontMetrics.descent) / 2
         for (i in 0 until 4) {
             val left = i * (tileWidth + gap)
-            if (fold < 1f && previous[i] != digits[i]) {
-                // Behind the flap: the new digit above, the old digit below.
-                drawHalf(canvas, left, tileWidth, tileHeight, radius, digits[i], baseline, top = true, scaleY = 1f)
-                drawHalf(canvas, left, tileWidth, tileHeight, radius, previous[i], baseline, top = false, scaleY = 1f)
-                if (fold < 0.5f) {
-                    drawHalf(canvas, left, tileWidth, tileHeight, radius, previous[i], baseline, top = true, scaleY = 1f - 2f * fold)
-                } else {
-                    drawHalf(canvas, left, tileWidth, tileHeight, radius, digits[i], baseline, top = false, scaleY = 2f * fold - 1f)
-                }
-            } else {
-                rect.set(left, 0f, left + tileWidth, tileHeight)
-                if (opaque) canvas.drawRoundRect(rect, radius, radius, tile)
-                drawGlyph(canvas, digits[i], left + tileWidth / 2, baseline)
-            }
+            rect.set(left, 0f, left + tileWidth, tileHeight)
+            if (opaque) canvas.drawRoundRect(rect, radius, radius, tile)
+            drawGlyph(canvas, digits[i], left + tileWidth / 2, baseline)
             canvas.drawRect(left, tileHeight / 2 - 3f, left + tileWidth, tileHeight / 2 + 3f, seam)
         }
     }
 
-    private companion object {
-        const val FOLD_MS = 300L
-    }
 }
 
 /** Sun path for the time of day: sunrise at 06:00 on the left, noon at the top, sunset at 18:00 on the right. */

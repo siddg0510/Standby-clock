@@ -148,12 +148,24 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
     private val stripingView = CalendarGridView(context).apply { bigDay = true }
     private val commandView = CommandCenter(context)
     // Tabular figures keep every digit the same width, so the time does not shift sideways as the minutes change.
-    private val timeView = text(170f, Color.WHITE, weighted("sans-serif", 100)).apply { fontFeatureSettings = "tnum" }
+    private val timeView = text(170f, Color.WHITE, weighted("sans-serif", 700)).apply { fontFeatureSettings = "tnum" }
+    // Portrait Digital stacks the hours (timeView) over the minutes (this view).
+    private val minuteView = text(170f, Color.WHITE, weighted("sans-serif", 700)).apply {
+        fontFeatureSettings = "tnum"
+        visibility = View.GONE
+    }
+    // The info line above the digits: date and temperature, semibold, in the clock colour at 55% brightness.
+    private val headerView = text(26f, Color.WHITE, weighted("sans-serif", 600)).apply { gravity = Gravity.START }
+    // Digital and Duo put the info line, the digits and the alarm line in one left-aligned block.
+    private val heroBlock = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        clipChildren = false
+        clipToPadding = false
+    }
     private val panelView = TextView(context).apply {
         setTextColor(Color.WHITE)
         gravity = Gravity.CENTER
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 26f)
-        setShadowLayer(12f, 0f, 0f, 0xCC000000.toInt())
         setSingleLine(false)
         maxLines = 14
     }
@@ -176,11 +188,13 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
     }
     private val duoLeft = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
-        gravity = Gravity.CENTER
+        gravity = Gravity.CENTER_VERTICAL or Gravity.START
+        setPadding((24 * metrics.density).toInt(), 0, (8 * metrics.density).toInt(), 0)
     }
     private val duoRight = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
-        gravity = Gravity.CENTER_VERTICAL
+        gravity = Gravity.CENTER_VERTICAL or Gravity.START
+        setPadding((8 * metrics.density).toInt(), 0, (24 * metrics.density).toInt(), 0)
     }
     private val duoRow = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -245,6 +259,7 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
         ).apply { setMargins(margin, margin, margin, margin) })
         // The palette gradient needs the real height of the time, which only exists after layout.
         timeView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateGradient() }
+        minuteView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateGradient() }
     }
 
     /** Applies the chosen face, draws the current state and starts the refreshes. */
@@ -347,7 +362,7 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
         val face = currentFace()
         val duo = face == Settings.FACE_DUO
         val command = face == Settings.FACE_COMMAND
-        layoutChildren(duo, command)
+        layoutChildren(face, duo, command)
         val panels = face == Settings.FACE_PANELS
         column.visibility = visibleIf(!duo && !panels)
         duoRow.visibility = visibleIf(duo)
@@ -420,15 +435,20 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
     }
 
     /** Puts each view under the right container: one column, the command centre, or the duo's two columns. */
-    private fun layoutChildren(duo: Boolean, command: Boolean) {
+    private fun layoutChildren(face: String, duo: Boolean, command: Boolean) {
         listOf(
             analogView, segmentedView, radialView, solarView, retroflipView, pixelView, stripingView,
-            commandView, timeView, chargeBar, panelView, dateView, infoView, weatherView, playerCard, batteryView, issView,
+            commandView, heroBlock, timeView, minuteView, headerView, chargeBar, panelView, dateView, infoView,
+            weatherView, playerCard, batteryView, issView,
         ).forEach { (it.parent as? ViewGroup)?.removeView(it) }
 
         when {
             duo -> {
-                duoLeft.addView(timeView, wrapParams())
+                heroBlock.addView(headerView, heroParams())
+                heroBlock.addView(timeView, heroParams())
+                duoLeft.addView(heroBlock, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                ))
                 duoLeft.addView(dateView, wrapParams())
                 duoLeft.addView(batteryView, wrapParams())
                 duoRight.addView(weatherView, wrapParams())
@@ -449,13 +469,21 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
                 column.addView(pixelView)
                 column.addView(stripingView)
                 column.addView(issView)
-                column.addView(timeView, columnParams())
+                if (face == Settings.FACE_DIGITAL) {
+                    heroBlock.addView(headerView, heroParams())
+                    heroBlock.addView(timeView, heroParams())
+                    heroBlock.addView(minuteView, heroParams())
+                    heroBlock.addView(infoView, heroParams())
+                    column.addView(heroBlock, columnParams())
+                } else {
+                    column.addView(timeView, columnParams())
+                }
                 column.addView(chargeBar, LinearLayout.LayoutParams(
                     (metrics.widthPixels * 0.5f).toInt(), (16 * metrics.density).toInt(),
                 ).apply { gravity = Gravity.CENTER_HORIZONTAL })
                 column.addView(panelView, columnParams())
                 column.addView(dateView, columnParams())
-                column.addView(infoView, columnParams())
+                if (face != Settings.FACE_DIGITAL) column.addView(infoView, columnParams())
                 column.addView(weatherView, columnParams())
                 column.addView(playerCard, playerParams(duo = false))
                 column.addView(batteryView, columnParams())
@@ -465,10 +493,23 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
 
     /** Sets the big time's size, font and colour for the face. Portrait gets smaller sizes so the digits fit. */
     private fun styleTime(face: String, duo: Boolean) {
+        val hero = face == Settings.FACE_DIGITAL || duo
+        // Defaults for every face; the hero layout and the special faces override them below.
+        applyShadows(face)
         timeView.setTextColor(Color.WHITE)
-        timeView.setShadowLayer(12f, 0f, 0f, 0xCC000000.toInt())
+        timeView.gravity = Gravity.CENTER
+        timeView.includeFontPadding = true
+        minuteView.visibility = View.GONE
+        headerView.visibility = visibleIf(hero)
+        dateView.visibility = visibleIf(!hero)
         dateView.textSize = if (face == Settings.FACE_DEMENTIA) 40f else 32f
         infoView.textSize = if (face == Settings.FACE_DEMENTIA) 40f else 26f
+        infoView.setTextColor(0xFFBBBBBB.toInt())
+        infoView.gravity = Gravity.CENTER
+        weatherView.textSize = 26f
+        weatherView.setTextColor(0xFFBBBBBB.toInt())
+        weatherView.typeface = Typeface.DEFAULT
+        weatherView.gravity = Gravity.CENTER
         panelView.setTypeface(
             if (face == Settings.FACE_STARSHIP || face == Settings.FACE_SYSTEM || face == Settings.FACE_WORLD) {
                 Typeface.MONOSPACE
@@ -512,10 +553,7 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
                 timeView.typeface = weighted("sans-serif", 300)
                 applyBatteryStyle()
             }
-            duo -> {
-                timeView.textSize = 120f
-                timeView.typeface = fontFor(thin = true)
-            }
+            hero -> styleHero(duo)
             else -> {
                 timeView.textSize = if (portrait) 120f else 170f
                 timeView.typeface = fontFor(thin = true)
@@ -523,6 +561,87 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
         }
         applyPalette(face)
     }
+
+    /**
+     * Digital and Duo: the time is the only large element. The digits are about 60% of the screen height (hours and
+     * minutes stacked at about 30% each in portrait) and at most 88% of the width (the width of one Duo column).
+     * The info line sits above the digits at about 7% of the screen height and never above one eighth of the digit height.
+     */
+    private fun styleHero(duo: Boolean) {
+        val width = metrics.widthPixels.toFloat()
+        val height = metrics.heightPixels.toFloat()
+        val stacked = portrait && !duo
+        val typeface = heroTypeface()
+        val maxWidth = if (duo) width * 0.5f - 32 * metrics.density else width * 0.88f
+        val sample = when {
+            stacked -> "00"
+            settings.showSeconds -> "00:00:00"
+            else -> "00:00"
+        }
+        val fit = DigitFit.fit(typeface, sample, height * if (stacked) 0.30f else 0.60f, maxWidth)
+
+        for (view in listOf(timeView, minuteView)) {
+            view.typeface = typeface
+            view.gravity = Gravity.START
+            view.includeFontPadding = false
+            view.setTextSize(TypedValue.COMPLEX_UNIT_PX, fit.textSizePx)
+        }
+        minuteView.visibility = visibleIf(stacked)
+
+        val headerPx = min(height * 0.07f, fit.digitHeightPx / 8f)
+            .coerceAtLeast(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 14f, metrics))
+        for (view in listOf(headerView, infoView)) {
+            view.setTextSize(TypedValue.COMPLEX_UNIT_PX, headerPx)
+            view.typeface = weighted("sans-serif", 600)
+            view.gravity = Gravity.START
+        }
+        weatherView.gravity = Gravity.START
+        if (duo) {
+            // The second Duo stack: the weather as a bold value, the alarm and event line small and grey.
+            weatherView.textSize = 40f
+            weatherView.typeface = weighted("sans-serif", 700)
+            weatherView.setTextColor(Color.WHITE)
+            infoView.textSize = 20f
+        }
+
+        val gap = (16 * metrics.density).toInt()
+        val lineGap = (24 * metrics.density).toInt()
+        (headerView.layoutParams as? LinearLayout.LayoutParams)?.bottomMargin = gap
+        (timeView.layoutParams as? LinearLayout.LayoutParams)?.let {
+            it.topMargin = -fit.topSlackPx
+            it.bottomMargin = -fit.bottomSlackPx
+        }
+        (minuteView.layoutParams as? LinearLayout.LayoutParams)?.let {
+            it.topMargin = -fit.topSlackPx + lineGap
+            it.bottomMargin = -fit.bottomSlackPx
+        }
+        if (!duo) (infoView.layoutParams as? LinearLayout.LayoutParams)?.topMargin = gap
+        (heroBlock.layoutParams as? LinearLayout.LayoutParams)?.let {
+            it.width = Math.ceil(fit.widthPx.toDouble()).toInt() + 2
+            heroBlock.layoutParams = it
+        }
+    }
+
+    private fun heroTypeface(): Typeface = when (settings.fontStyle) {
+        Settings.FONT_SERIF -> Typeface.create("serif", Typeface.BOLD)
+        Settings.FONT_MONO -> Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        Settings.FONT_ROUNDED -> weighted("sans-serif-rounded", 700)
+        Settings.FONT_CONDENSED -> weighted("sans-serif-condensed", 700)
+        else -> weighted("sans-serif", 700)
+    }
+
+    /** No text shadows anywhere, except a soft one over a photo so the text stays readable. */
+    private fun applyShadows(face: String) {
+        val radius = if (face == Settings.FACE_PHOTO) 12f else 0f
+        listOf(timeView, minuteView, headerView, dateView, infoView, weatherView, batteryView, leftCorner, rightCorner)
+            .forEach { it.setShadowLayer(radius, 0f, 0f, 0xCC000000.toInt()) }
+    }
+
+    private fun dim(color: Int, brightness: Float = 0.55f): Int = Color.rgb(
+        (Color.red(color) * brightness).toInt(),
+        (Color.green(color) * brightness).toInt(),
+        (Color.blue(color) * brightness).toInt(),
+    )
 
     /** The clock font chosen in settings, with the thin weight as the default. */
     private fun fontFor(thin: Boolean): Typeface = typefaceFor(settings.fontStyle, thin)
@@ -544,7 +663,7 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
             else -> Triple(Color.WHITE, Color.WHITE, 0x0)
         }
         timeView.setTextColor(colour)
-        if (glow != 0) timeView.setShadowLayer(NEON_GLOW_DP * metrics.density, 0f, 0f, glow) else timeView.setShadowLayer(12f, 0f, 0f, 0xCC000000.toInt())
+        if (glow != 0) timeView.setShadowLayer(NEON_GLOW_DP * metrics.density, 0f, 0f, glow) else timeView.setShadowLayer(0f, 0f, 0f, Color.TRANSPARENT)
         chargeBar.progressTintList = ColorStateList.valueOf(bar)
     }
 
@@ -552,6 +671,7 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
     private fun update(animate: Boolean = false) {
         val now = System.currentTimeMillis()
         val oldTime = timeView.text.toString()
+        val oldMinutes = minuteView.text.toString()
         val calendar = Calendar.getInstance().apply { timeInMillis = now }
         val hour = calendar.get(Calendar.HOUR_OF_DAY)
         val minute = calendar.get(Calendar.MINUTE)
@@ -582,16 +702,23 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
             }
             Settings.FACE_WORLD -> panelView.text = worldLines(calendar)
             Settings.FACE_COMMAND -> updateCommand(clockText, hour, now, use24Hour)
+            Settings.FACE_DIGITAL -> if (portrait) {
+                // Hours stacked over minutes.
+                timeView.text = DateFormat.format(if (use24Hour) "HH" else "h", now)
+                minuteView.text = DateFormat.format("mm", now)
+            } else {
+                timeView.text = clockText
+            }
             else -> timeView.text = clockText
         }
-        settleTimeText(oldTime, animate)
+        settleTimeText(oldTime, oldMinutes, animate)
         analogView.setTime(hour, minute)
         analogView.setSubDial(if (settings.analogSubDial) clockText else null)
         segmentedView.setTime(hour, minute, use24Hour)
         radialView.setTime(hour, minute, use24Hour)
         radialView.setInvert(settings.radialInvert)
         solarView.setTime(hour, minute)
-        retroflipView.setTime(hour, minute, use24Hour, animate && !settings.showSeconds)
+        retroflipView.setTime(hour, minute, use24Hour)
         pixelView.setTime(hour, minute, use24Hour)
         stripingView.invalidate()
 
@@ -615,9 +742,11 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
         updateCorners(now)
         refreshWeather(now)
         weatherView.text = weatherText
-        weatherView.visibility = visibleIf(weatherText.isNotEmpty() && face != Settings.FACE_WEATHER)
+        weatherView.visibility = visibleIf(weatherText.isNotEmpty() && face != Settings.FACE_WEATHER && face != Settings.FACE_DIGITAL)
         renderMusic()
         batteryView.text = batteryLine(context)
+        batteryView.visibility = visibleIf(settings.showBatteryLine && batteryView.text.isNotEmpty())
+        updateHeader(now)
         shiftForBurnIn()
         checker.setPhase(((now / MINUTE_MS) % 2).toInt())
         updateOverlay(clockText)
@@ -627,22 +756,31 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
     }
 
     /**
-     * The big time text was just set to its new value. On the minute refresh, when it differs from [oldTime], put the
-     * old text back and fade it out (120 ms), swap in the new text, and fade it in (180 ms). Everywhere else the new
-     * text stays as set. Any fade in flight is cancelled first and finished directly.
+     * The big time text was just set to its new value. On the minute refresh, when it differs from the old text, put the
+     * old text back and fade it out (125 ms), swap in the new text, and fade it in (125 ms): a 250 ms crossfade in all.
+     * Everywhere else the new text stays as set. Any fade in flight is cancelled first and finished directly.
      */
-    private fun settleTimeText(oldTime: String, animate: Boolean) {
+    private fun settleTimeText(oldTime: String, oldMinutes: String, animate: Boolean) {
         timeFadeToken++
         val token = timeFadeToken
         timeView.animate().cancel()
+        minuteView.animate().cancel()
         timeView.alpha = 1f
+        minuteView.alpha = 1f
         val newTime = timeView.text.toString()
-        if (!animate || settings.showSeconds || timeView.visibility != View.VISIBLE || oldTime.isEmpty() || oldTime == newTime) return
+        val newMinutes = minuteView.text.toString()
+        val changed = oldTime != newTime || oldMinutes != newMinutes
+        if (!animate || settings.showSeconds || timeView.visibility != View.VISIBLE || oldTime.isEmpty() || !changed) return
+        val stacked = minuteView.visibility == View.VISIBLE
         timeView.text = oldTime
+        minuteView.text = oldMinutes
+        if (stacked) minuteView.animate().alpha(0f).setDuration(TIME_FADE_OUT_MS).start()
         timeView.animate().alpha(0f).setDuration(TIME_FADE_OUT_MS).withEndAction {
             if (token != timeFadeToken) return@withEndAction
             timeView.text = newTime
+            minuteView.text = newMinutes
             timeView.animate().alpha(1f).setDuration(TIME_FADE_IN_MS).setInterpolator(DecelerateInterpolator()).start()
+            if (stacked) minuteView.animate().alpha(1f).setDuration(TIME_FADE_IN_MS).setInterpolator(DecelerateInterpolator()).start()
         }.start()
     }
 
@@ -650,8 +788,18 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
     private fun settleDigits() {
         timeFadeToken++
         timeView.animate().cancel()
+        minuteView.animate().cancel()
         timeView.alpha = 1f
-        retroflipView.finishFold()
+        minuteView.alpha = 1f
+    }
+
+    /** The info line above the digits: the date, then the temperature when the weather is known, e.g. "Sun 19 Oct  14". */
+    private fun updateHeader(now: Long) {
+        val date = DateFormat.format("EEE d MMM", now).toString()
+        val temperature = weatherText.substringBefore('\u00B0', "")
+            .takeLastWhile { it.isDigit() || it == '-' }
+            .takeIf { it.isNotEmpty() }
+        headerView.text = if (temperature == null) date else "$date  $temperature\u00B0"
     }
 
     private fun updateCorners(now: Long) {
@@ -707,15 +855,15 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
             if (artist.isNullOrBlank()) title else "$title\n$artist"
         } ?: "Nothing playing"
         val tiles = listOf(
-            "$greeting\n$clockText",
-            weatherText.ifEmpty { "Weather not set" },
-            agenda,
-            music,
-            batteryLine(context).ifEmpty { "Battery" },
+            greeting to clockText,
+            "Weather" to weatherText.ifEmpty { "Not set" },
+            "Next event" to agenda,
+            "Music" to music,
+            "Battery" to batteryLine(context).ifEmpty { "--" },
         )
         val idle = MusicSession.title() == null && (next == null || next.begin - now > 60 * MINUTE_MS)
         commandView.alpha = if (settings.commandIdleFade && idle) 0.25f else 1f
-        commandView.render(tiles, settings.commandHero) { index ->
+        commandView.render(tiles, settings.commandHero, timeIndex = 0) { index ->
             settings.commandHero = index
             Haptics.tap(context)
             update()
@@ -752,7 +900,7 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
     private fun worldLines(calendar: Calendar): String {
         val localOffset = calendar.get(Calendar.ZONE_OFFSET) + calendar.get(Calendar.DST_OFFSET)
         val zones = settings.worldZoneIds()
-        if (zones.isEmpty()) return "Add cities in More settings"
+        if (zones.isEmpty()) return "Add cities in Settings, under Tools and about"
         return zones.joinToString("\n") { id ->
             try {
                 val zone = ZoneId.of(id)
@@ -826,7 +974,7 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
             root.setLayerType(View.LAYER_TYPE_NONE, null)
             return
         }
-        // A square-root curve makes the default 33% a clear tint rather than a faint one.
+        // A square-root curve keeps a low strength clearly visible. At 100% every colour becomes the tint colour and black stays black.
         val t = Math.sqrt(strength / 100.0).toFloat()
         val tr = Color.red(color) / 255f
         val tg = Color.green(color) / 255f
@@ -885,6 +1033,7 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
                     val line = "${current.temperature.roundToInt()}${current.unit}" +
                         if (summary.isEmpty()) "" else " · $summary"
                     weatherText = line
+                    updateHeader(System.currentTimeMillis())
                     settings.weatherCache = "$line|${System.currentTimeMillis()}"
                     weatherView.text = line
                 }
@@ -1038,7 +1187,7 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
     /** Work that runs each second: seconds on the digital faces, the colon, and the panels. */
     private fun tickFace(now: Long) {
         val face = currentFace()
-        if (settings.showSeconds && face in SECOND_FACES) {
+        if (settings.showSeconds && face in SECOND_FACES && !(face == Settings.FACE_DIGITAL && portrait)) {
             timeView.text = clockString(now, DateFormat.is24HourFormat(context))
         }
         if (face == Settings.FACE_SEGMENTED) {
@@ -1047,35 +1196,51 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
         if (face == Settings.FACE_PANELS) panelsView.tick(now, weatherText, hourlyText)
     }
 
-    /** The clock colour from the palette setting. The charging and neon faces keep their own colours. */
+    /**
+     * The clock colour from the palette setting. The charging and neon faces keep their own colours. Only a chosen
+     * theme adds a glow; without one there is no shadow and no glow.
+     */
     private fun applyPalette(face: String) {
         val theme = Themes.byId(settings.themeId)
-        if (theme != null && face != Settings.FACE_CHARGE && face != Settings.FACE_NEON) {
-            // A theme sets the text colour and a glow in its accent colour, as in Standby Pro.
-            timeView.setTextColor(theme.foreground)
-            timeView.setShadowLayer(30f * theme.glow + 4f, 0f, 0f, theme.accent)
-        } else if (face != Settings.FACE_CHARGE && face != Settings.FACE_NEON) {
-            timeView.setTextColor(Settings.PALETTES.getOrNull(settings.clockPalette)?.second ?: Color.WHITE)
-            timeView.setShadowLayer(12f, 0f, 0f, 0xCC000000.toInt())
+        val ownColour = face == Settings.FACE_CHARGE || face == Settings.FACE_NEON
+        if (!ownColour) {
+            val base: Int
+            if (theme != null) {
+                // A theme sets the text colour and a glow in its accent colour, as in Standby Pro.
+                base = theme.foreground
+                timeView.setTextColor(base)
+                timeView.setShadowLayer(30f * theme.glow + 4f, 0f, 0f, theme.accent)
+                minuteView.setShadowLayer(30f * theme.glow + 4f, 0f, 0f, theme.accent)
+            } else {
+                base = Settings.PALETTES.getOrNull(settings.clockPalette)?.second ?: Color.WHITE
+                timeView.setTextColor(base)
+            }
+            minuteView.setTextColor(base)
+            // The info line and the alarm line use the same hue at 55% brightness.
+            headerView.setTextColor(dim(base))
+            if (face == Settings.FACE_DIGITAL) infoView.setTextColor(dim(base))
         }
         updateGradient()
     }
 
-    /** A gradient from the palette colour at the top to a lighter shade at the bottom, when the setting is on. */
+    /** A gradient on the digits: the theme's, or the palette colour to a lighter shade when that setting is on. Never by default. */
     private fun updateGradient() {
         val face = currentFace()
         val base = Settings.PALETTES.getOrNull(settings.clockPalette)?.second ?: Color.WHITE
         val theme = Themes.byId(settings.themeId)
-        val themeGradient = theme != null && theme.gradient.size >= 2 && face != Settings.FACE_CHARGE && face != Settings.FACE_NEON
-        val plain = !settings.clockGradient || face == Settings.FACE_CHARGE || face == Settings.FACE_NEON || timeView.height == 0
-        timeView.paint.shader = if (themeGradient && timeView.height > 0) {
-            Themes.digitShader(theme, 0f, timeView.height.toFloat())
-        } else if (plain) {
-            null
-        } else {
-            LinearGradient(0f, 0f, 0f, timeView.height.toFloat(), base, mix(base, Color.WHITE, 0.45f), Shader.TileMode.CLAMP)
+        val own = face == Settings.FACE_CHARGE || face == Settings.FACE_NEON
+        val themeGradient = theme != null && theme.gradient.size >= 2 && !own
+        for (view in listOf(timeView, minuteView)) {
+            val height = view.height
+            view.paint.shader = when {
+                height == 0 -> null
+                themeGradient -> Themes.digitShader(theme, 0f, height.toFloat())
+                settings.clockGradient && !own ->
+                    LinearGradient(0f, 0f, 0f, height.toFloat(), base, mix(base, Color.WHITE, 0.45f), Shader.TileMode.CLAMP)
+                else -> null
+            }
+            view.invalidate()
         }
-        timeView.invalidate()
     }
 
     /** A system family at an explicit weight (100 thin, 300 light, 700 bold), not italic. */
@@ -1144,7 +1309,6 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
             gravity = Gravity.CENTER
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
-            setShadowLayer(12f, 0f, 0f, 0xCC000000.toInt())
         }
 
     private fun columnParams() = LinearLayout.LayoutParams(
@@ -1153,6 +1317,12 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
     ).apply { gravity = Gravity.CENTER_HORIZONTAL }
 
     private fun wrapParams() = columnParams()
+
+    /** Children of the left-aligned digit block take its full width. */
+    private fun heroParams() = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+    )
 
     /** The player card takes a fixed share of the width so its text can ellipsize. */
     private fun playerParams(duo: Boolean): LinearLayout.LayoutParams {
@@ -1173,9 +1343,9 @@ class ClockUi(private val context: Context, private val faceOverride: String? = 
     private companion object {
         const val MINUTE_MS = 60_000L
         const val SHIFT_MS = 800L
-        const val FACE_FADE_MS = 220L
-        const val TIME_FADE_OUT_MS = 120L
-        const val TIME_FADE_IN_MS = 180L
+        const val FACE_FADE_MS = 250L
+        const val TIME_FADE_OUT_MS = 125L
+        const val TIME_FADE_IN_MS = 125L
         const val NEON_GLOW_DP = 16f
         const val NEON_PULSE_MS = 1000L
         /** Faces that show seconds when the setting is on. */

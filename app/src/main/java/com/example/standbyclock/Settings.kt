@@ -10,16 +10,16 @@ import java.util.Locale
  * the charging receiver and the tools all read the same values.
  */
 /**
- * Look of one panel: corner radius (dp), background opacity (%), border colour index into
+ * Look of one panel: corner radius (dp), fill opacity (%, 0 means no fill), border colour index into
  * [Settings.BORDER_COLOURS], border width (dp), text zoom (%) and gap around the panel (dp).
  */
 data class PanelStyle(
-    val corner: Int = 16,
-    val alpha: Int = 100,
+    val corner: Int = 28,
+    val alpha: Int = 0,
     val border: Int = 0,
     val thickness: Int = 0,
     val zoom: Int = 100,
-    val spacing: Int = 8,
+    val spacing: Int = 16,
 ) {
     fun encode(): String = listOf(corner, alpha, border, thickness, zoom, spacing).joinToString(",")
 
@@ -196,9 +196,9 @@ class Settings(context: Context) {
         get() = prefs.getInt(KEY_TINT_COLOR, 0xFFFF0000.toInt())
         set(value) = prefs.edit().putInt(KEY_TINT_COLOR, value).apply()
 
-    /** Overlay strength, 0 to 100 percent. */
+    /** Night tint strength, 0 to 100 percent. At 100 every colour on screen becomes the tint colour and black stays black. */
     var tintStrength: Int
-        get() = prefs.getInt(KEY_TINT_STRENGTH, 33)
+        get() = prefs.getInt(KEY_TINT_STRENGTH, 100)
         set(value) = prefs.edit().putInt(KEY_TINT_STRENGTH, value).apply()
 
     /** Daytime brightness, 10 to 100 percent. 100 leaves the system brightness alone. */
@@ -224,7 +224,7 @@ class Settings(context: Context) {
         set(value) = prefs.edit().putInt(KEY_NIGHT_END, value).apply()
 
     var checkerboard: Boolean
-        get() = prefs.getBoolean(KEY_CHECKER, true)
+        get() = prefs.getBoolean(KEY_CHECKER, false)
         set(value) = prefs.edit().putBoolean(KEY_CHECKER, value).apply()
 
     var checkerDim: Int
@@ -384,6 +384,11 @@ class Settings(context: Context) {
     var quickControls: Boolean
         get() = prefs.getBoolean(KEY_QUICK_CONTROLS, false)
         set(value) = prefs.edit().putBoolean(KEY_QUICK_CONTROLS, value).apply()
+
+    /** Shows the battery percentage line under the clock. Off by default. */
+    var showBatteryLine: Boolean
+        get() = prefs.getBoolean(KEY_BATTERY_LINE, false)
+        set(value) = prefs.edit().putBoolean(KEY_BATTERY_LINE, value).apply()
 
     /** Paints the clock digits with a gradient from the palette colour to a lighter shade. */
     var clockGradient: Boolean
@@ -590,14 +595,14 @@ class Settings(context: Context) {
         const val FACE_ISS = "iss"
         const val FACE_PANELS = "panels"
 
-        /** Clock colours. The first is the default. */
+        /** Clock colours. The first is the default. The rest are the optional swatches of the clock colour setting. */
         val PALETTES = listOf(
             "White" to 0xFFFFFFFF.toInt(),
-            "Warm amber" to 0xFFFFD58A.toInt(),
-            "Ice blue" to 0xFFA8E0FF.toInt(),
-            "Mint" to 0xFF9FF5D0.toInt(),
-            "Rose" to 0xFFFFB3C7.toInt(),
-            "Lavender" to 0xFFD0B8FF.toInt(),
+            "Red" to 0xFFFF453A.toInt(),
+            "Orange" to 0xFFFF9F0A.toInt(),
+            "Yellow" to 0xFFFFD60A.toInt(),
+            "Green" to 0xFF30D158.toInt(),
+            "Blue" to 0xFF0A84FF.toInt(),
         )
 
         /** Panel border colours. Index 0 means no border. */
@@ -622,43 +627,52 @@ class Settings(context: Context) {
             "system" to "System",
         )
 
-        /** Face value and the label shown in settings. */
+        /** Face value and the label shown in settings. The main styles come first, then [MORE_STYLES]. */
         val FACE_OPTIONS = listOf(
             FACE_DIGITAL to "Digital",
             FACE_ANALOG to "Analog",
-            FACE_SEGMENTED to "Segmented (LCD)",
-            FACE_WORD to "Word clock",
-            FACE_NEON to "Neon",
             FACE_BIG to "Big crop",
             FACE_RETROFLIP to "Retroflip",
             FACE_SOLAR to "Solar",
+            FACE_DEMENTIA to "Dementia (large text)",
+            FACE_WORLD to "World clock",
+            FACE_COMMAND to "Command Center",
+            FACE_CHARGE to "Charging (battery)",
+            FACE_DUO to "Duo (clock + widgets)",
+            FACE_PANELS to "Panels (two to four cards)",
+            FACE_PHOTO to "Photo (your pictures)",
+            FACE_WEATHER to "Weather clock",
+            FACE_SEGMENTED to "Segmented (LCD)",
+            FACE_WORD to "Word clock",
+            FACE_NEON to "Neon",
             FACE_RADIAL to "Radial",
             FACE_MATRIX to "Matrix rain",
-            FACE_DEMENTIA to "Dementia (large text)",
             FACE_ROMAN to "Roman numerals",
             FACE_PIXEL to "Pixel art",
-            FACE_WORLD to "World clock",
             FACE_STRIKING to "Striking calendar",
-            FACE_CHARGE to "Charging (battery)",
-            FACE_COMMAND to "Command Center",
             FACE_SYSTEM to "System dashboard",
             FACE_STARSHIP to "Starship console",
-            FACE_WEATHER to "Weather clock",
-            FACE_DUO to "Duo (clock + widgets)",
-            FACE_PHOTO to "Photo (your pictures)",
+            FACE_ISS to "ISS tracker",
+        )
+
+        const val GROUP_MORE_STYLES = "More styles"
+
+        /** The less-used faces. They stay fully working and sit in the last group, after the main styles. */
+        val MORE_STYLES = listOf(
+            FACE_SEGMENTED, FACE_WORD, FACE_NEON, FACE_RADIAL, FACE_MATRIX, FACE_ROMAN, FACE_PIXEL,
+            FACE_STRIKING, FACE_SYSTEM, FACE_STARSHIP, FACE_ISS,
         )
 
         /** Groups for horizontal swipes. Vertical swipes and taps move within the group. */
         val FACE_GROUPS: List<Pair<String, List<String>>> = listOf(
             "Clocks" to listOf(
-                FACE_DIGITAL, FACE_ANALOG, FACE_SEGMENTED, FACE_WORD, FACE_NEON, FACE_BIG, FACE_RETROFLIP,
-                FACE_SOLAR, FACE_RADIAL, FACE_MATRIX, FACE_DEMENTIA, FACE_ROMAN, FACE_PIXEL, FACE_WORLD,
-                FACE_STRIKING, FACE_ISS,
+                FACE_DIGITAL, FACE_ANALOG, FACE_BIG, FACE_RETROFLIP, FACE_SOLAR, FACE_DEMENTIA, FACE_WORLD,
             ),
-            "Dashboards" to listOf(FACE_COMMAND, FACE_SYSTEM, FACE_STARSHIP, FACE_CHARGE),
+            "Dashboards" to listOf(FACE_COMMAND, FACE_CHARGE),
             "Duo" to listOf(FACE_DUO, FACE_PANELS),
             "Photos" to listOf(FACE_PHOTO),
             "Weather" to listOf(FACE_WEATHER),
+            GROUP_MORE_STYLES to MORE_STYLES,
         )
 
         const val LAUNCH_OFF = "off"
@@ -780,5 +794,6 @@ class Settings(context: Context) {
         private const val KEY_PANEL_YOGA = "panel_yoga"
         private const val KEY_THEME = "theme_id"
         private const val KEY_QUICK_CONTROLS = "quick_controls"
+        private const val KEY_BATTERY_LINE = "battery_line"
     }
 }

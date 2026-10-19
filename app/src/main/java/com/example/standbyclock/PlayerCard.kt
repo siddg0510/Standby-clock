@@ -14,26 +14,34 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 
-/** Spotify-style now-playing card: album art, title, artist, progress bar and transport controls. */
+/** Now-playing card: album art, title, artist, progress bar and transport controls. No fill unless [filled] is set. */
 class PlayerCard(context: Context) : LinearLayout(context) {
 
     /** Called when the radio button is pressed. */
     var onRadio: (() -> Unit)? = null
 
     private val dp = context.resources.displayMetrics.density
-    private val accent = 0xFF1DB954.toInt()
+    private val accent = Color.WHITE
+    private val neutral = 0xFF3A3A3C.toInt()
+
+    /** Optional card fill (#141416). Off by default, so the card sits on the black background. */
+    var filled: Boolean = false
+        set(value) {
+            field = value
+            background = cardBackground()
+        }
 
     private val art = ImageView(context).apply {
         scaleType = ImageView.ScaleType.CENTER_CROP
-        background = roundRect(0xFF2A2A2A.toInt(), 8f)
+        background = roundRect(0xFF2C2C2E.toInt(), 12f)
     }
     private val title = line(22f, Color.WHITE, bold = true)
-    private val artist = line(16f, 0xFFB3B3B3.toInt(), bold = false)
-    private val source = line(12f, 0xFF8A8A8A.toInt(), bold = false)
+    private val artist = line(15f, 0xFF8E8E93.toInt(), bold = false)
+    private val source = line(15f, 0xFF8E8E93.toInt(), bold = false)
     private val progress = ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal).apply {
         max = 1000
         progressTintList = ColorStateList.valueOf(accent)
-        progressBackgroundTintList = ColorStateList.valueOf(0xFF404040.toInt())
+        progressBackgroundTintList = ColorStateList.valueOf(neutral)
     }
     private val previous = control("Prev", primary = false) { MusicSession.previous() }
     private val playPause = control("Play", primary = true) { MusicSession.playPause() }
@@ -43,8 +51,8 @@ class PlayerCard(context: Context) : LinearLayout(context) {
 
     init {
         orientation = VERTICAL
-        background = roundRect(0xFF181818.toInt(), 20f)
-        val pad = (16 * dp).toInt()
+        background = cardBackground()
+        val pad = (20 * dp).toInt()
         setPadding(pad, pad, pad, pad)
 
         val details = LinearLayout(context).apply {
@@ -97,8 +105,6 @@ class PlayerCard(context: Context) : LinearLayout(context) {
         source.text = if (app == null) "" else "Playing from $app"
         val bitmap = MusicSession.albumArt()
         art.setImageBitmap(bitmap)
-        // The card takes a darkened version of the album's average colour.
-        background = roundRect(bitmap?.let { darkAverage(it) } ?: 0xFF181818.toInt(), 20f)
         progress.progress = (MusicSession.progress() * 1000).toInt()
         playPause.text = if (MusicSession.isPlaying()) "Pause" else "Play"
         radio.text = if (RadioPlayer.isPlaying) "Stop radio" else "Radio"
@@ -109,28 +115,22 @@ class PlayerCard(context: Context) : LinearLayout(context) {
         setTextColor(color)
         maxLines = 1
         ellipsize = android.text.TextUtils.TruncateAt.END
-        if (bold) typeface = Typeface.DEFAULT_BOLD
+        typeface = if (bold) Typeface.create("sans-serif", Typeface.BOLD) else Typeface.create("sans-serif-medium", Typeface.NORMAL)
     }
 
     private fun control(label: String, primary: Boolean, onClick: () -> Unit): Button =
         Button(context).apply {
             text = label
-            setTextColor(Color.WHITE)
-            background = roundRect(if (primary) accent else 0xFF2A2A2A.toInt(), 999f)
+            setTextColor(if (primary) Color.BLACK else Color.WHITE)
+            background = roundRect(if (primary) accent else 0xFF2C2C2E.toInt(), 999f)
             setOnClickListener { onClick() }
             layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
                 setMargins((4 * dp).toInt(), 0, (4 * dp).toInt(), 0)
             }
         }
 
-    /** The average colour of the picture, darkened so the text stays readable. */
-    private fun darkAverage(bitmap: Bitmap): Int {
-        val pixel = Bitmap.createScaledBitmap(bitmap, 1, 1, true).getPixel(0, 0)
-        val r = (Color.red(pixel) * 0.35f).toInt()
-        val g = (Color.green(pixel) * 0.35f).toInt()
-        val b = (Color.blue(pixel) * 0.35f).toInt()
-        return Color.rgb(r, g, b)
-    }
+    /** Transparent by default; #141416 when [filled]. */
+    private fun cardBackground(): GradientDrawable = roundRect(if (filled) 0xFF141416.toInt() else Color.TRANSPARENT, 28f)
 
     private fun roundRect(color: Int, radiusDp: Float): GradientDrawable = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE

@@ -77,7 +77,7 @@ class ToolsActivity : Activity() {
         content.addView(heading("Agenda"))
         val agenda = Agenda.upcoming(this, days = 7, limit = 5)
         if (agenda.isEmpty()) {
-            content.addView(label("No upcoming events, or calendar access is off (allow it in settings)."))
+            content.addView(label("No upcoming events, or calendar access is off (allow it in Settings, under Tools and about)."))
         } else {
             agenda.forEach { entry ->
                 content.addView(label(
@@ -165,7 +165,7 @@ class ToolsActivity : Activity() {
         content.addView(heading("Protocols"))
         val protocols = settings.protocols.lines().filter { it.isNotBlank() }
         if (protocols.isEmpty()) {
-            content.addView(label("None yet. Add them in More settings."))
+            content.addView(label("None yet. Add them in Settings, under Tools and about."))
         } else {
             protocols.forEach { content.addView(label("• $it")) }
         }
@@ -173,7 +173,7 @@ class ToolsActivity : Activity() {
         content.addView(heading("Notifications"))
         val recent = NotificationsStack.recent()
         if (recent.isEmpty()) {
-            content.addView(label("No notifications yet. Allow notification access in More settings. Focus apps limit which ones appear."))
+            content.addView(label("No notifications yet. Allow notification access in Settings, under Charging and launch. Focus apps limit which ones appear."))
         } else {
             recent.take(15).forEach { content.addView(label("• $it")) }
         }

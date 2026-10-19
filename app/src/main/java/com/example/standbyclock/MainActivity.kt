@@ -348,12 +348,12 @@ class MainActivity : Activity() {
         private const val INDICATOR_FADE_MS = 150L
         private const val INDICATOR_SHOW_MS = 1200L
 
-        /** The walkthrough, shown on first launch and from More settings. Each page is one dialog. */
+        /** The walkthrough, shown on first launch and from Settings, under Tools and about. Each page is one dialog. */
         fun showTour(activity: Activity, step: Int = 0) {
             val pages = listOf(
                 "Tap the clock to change the face. Swipe up or down to move through the faces in a group, and swipe left or right to change group.",
                 "Pinch to see every screen at once. Hold the clock to open settings. Double-tap closes the app, if that is turned on.",
-                "Quick launch: in settings, choose When charging to open the clock when the charger goes in. Allow notifications and full-screen alerts so it can open from the lock screen.",
+                "Quick launch: in Settings, under Charging and launch, choose Charging to open the clock when the charger goes in. Allow notifications and full-screen alerts so it can open from the lock screen.",
                 "Screensaver: in Settings, Display, Screen saver, choose Standby Clock. Widget: long-press an empty spot on the home screen, choose Widgets, then pick Standby Clock.",
                 "Music controls need notification access, which you can turn on in settings. The Duo and panels face lets you put several items side by side.",
             )

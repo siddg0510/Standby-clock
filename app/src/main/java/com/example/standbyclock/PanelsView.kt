@@ -5,6 +5,8 @@ import android.appwidget.AppWidgetHostView
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Typeface
+import android.text.TextUtils
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.text.format.DateFormat
@@ -38,14 +40,14 @@ class PanelsView(private val context: Context) : LinearLayout(context) {
     private val dp = context.resources.displayMetrics.density
     private val portrait = context.resources.displayMetrics.heightPixels > context.resources.displayMetrics.widthPixels
 
-    private val texts = mutableListOf<TextView>()
+    private val texts = mutableListOf<TextCard>()
     private val slots = mutableListOf<FrameLayout>()
     private val params = mutableListOf<LayoutParams>()
     private val baseWeights = mutableListOf<Float>()
     private val stacks = mutableListOf<List<String>>()
     private val lastWidget = mutableListOf<String?>()
     private val widgetViews = mutableMapOf<Int, View>()
-    private val textCache = mutableMapOf<String, String>()
+    private val textCache = mutableMapOf<String, Triple<String, String, String>>()
     private val cards = mutableMapOf<String, View>()
     private var cacheMinute = -1L
     private var yogaOn = false
@@ -55,25 +57,23 @@ class PanelsView(private val context: Context) : LinearLayout(context) {
         removeAllViews()
         texts.clear(); slots.clear(); params.clear(); baseWeights.clear(); stacks.clear(); lastWidget.clear()
         orientation = if (portrait) VERTICAL else HORIZONTAL
+        // 16 dp here plus half of the 16 dp gap around each card gives the 24 dp screen margin.
+        val outer = (16 * dp).toInt()
+        setPadding(outer, outer, outer, outer)
         val weights = settings.panelWeights()
         settings.panelStacks().forEachIndexed { index, stack ->
             val style = settings.panelStyle(index)
-            val text = TextView(context).apply {
-                gravity = Gravity.CENTER
-                setTextColor(Color.WHITE)
-                textSize = 26f * style.zoom.coerceIn(50, 200) / 100f
-                setShadowLayer(12f, 0f, 0f, 0xCC000000.toInt())
-            }
+            val text = TextCard(context, style.zoom)
             val slot = FrameLayout(context)
             val box = FrameLayout(context).apply {
                 background = boxBackground(style)
-                val pad = (12 * dp).toInt()
+                val pad = (20 * dp).toInt()
                 setPadding(pad, pad, pad, pad)
                 addView(text, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
                 addView(slot, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             }
             val weight = weights.getOrElse(index) { 1f }
-            val gap = (style.spacing.coerceIn(0, 40) * dp).toInt()
+            val gap = (style.spacing.coerceIn(0, 40) * dp / 2f).toInt()
             val lp = if (portrait) {
                 LayoutParams(LayoutParams.MATCH_PARENT, 0, weight)
             } else {
@@ -114,7 +114,7 @@ class PanelsView(private val context: Context) : LinearLayout(context) {
         val rotate = settings.panelRotateSeconds
         stacks.forEachIndexed { panel, stack ->
             if (stack.isEmpty()) {
-                texts[panel].text = ""
+                texts[panel].show("", "", "")
                 return@forEachIndexed
             }
             val step = if (rotate > 0 && stack.size > 1) ((now / 1000 / rotate) % stack.size).toInt() else 0
@@ -142,7 +142,8 @@ class PanelsView(private val context: Context) : LinearLayout(context) {
                 lastWidget[panel] = null
                 slots[panel].visibility = View.GONE
                 texts[panel].visibility = View.VISIBLE
-                texts[panel].text = textFor(item, now, weatherLine, hourlyLine)
+                val (label, value, sub) = textFor(item, now, weatherLine, hourlyLine)
+                texts[panel].show(label, value, sub)
             }
         }
     }
@@ -205,39 +206,90 @@ class PanelsView(private val context: Context) : LinearLayout(context) {
         return view
     }
 
-    /** The text for a built-in item. Calendar and battery reads are kept for the rest of the minute. */
-    private fun textFor(item: String, now: Long, weatherLine: String, hourlyLine: String): String {
+    /** Label, value and a smaller line for a built-in item. Calendar and battery reads are kept for the rest of the minute. */
+    private fun textFor(item: String, now: Long, weatherLine: String, hourlyLine: String): Triple<String, String, String> {
         val heavy = item == "agenda" || item == "battery" || item == "system"
         if (heavy) textCache[item]?.let { return it }
-        val text = when (item) {
-            "clock" -> DateFormat.format(if (DateFormat.is24HourFormat(context)) "HH:mm" else "h:mm a", now).toString()
-            "weather" -> weatherLine.ifEmpty { "Weather not set" } + (if (hourlyLine.isEmpty()) "" else "\n$hourlyLine")
+        val card = when (item) {
+            "clock" -> Triple(
+                "Clock",
+                DateFormat.format(if (DateFormat.is24HourFormat(context)) "HH:mm" else "h:mm", now).toString(),
+                "",
+            )
+            "weather" -> Triple("Weather", weatherLine.ifEmpty { "Weather not set" }, hourlyLine)
             "agenda" -> Agenda.upcoming(context, days = 1, limit = 1).firstOrNull()?.let { event ->
-                "${DateFormat.format("HH:mm", event.begin)} ${event.title}\n" + Agenda.countdown(event.begin - now)
-            } ?: "No events today"
-            "music" -> MusicSession.title()?.let { title ->
-                val artist = MusicSession.artist()
-                if (artist.isNullOrBlank()) title else "$title\n$artist"
-            } ?: "Nothing playing"
-            "battery" -> batteryLine(context).ifEmpty { "Battery unknown" }
-            "protocol" -> Complications.rotate(settings.protocols, now, 60_000L).ifEmpty { "Add protocols in More settings" }
-            "quote" -> Complications.rotate(settings.quotes, now, 5 * 60_000L).ifEmpty { "Add quotes in More settings" }
-            "pomodoro" -> "Pomodoros today\n${settings.pomodorosToday()}"
-            "system" -> "${Build.MODEL}\n${batteryLine(context)}"
-            else -> ""
+                Triple(
+                    "Next event",
+                    event.title,
+                    "${DateFormat.format("HH:mm", event.begin)}  ${Agenda.countdown(event.begin - now)}",
+                )
+            } ?: Triple("Next event", "No events today", "")
+            "music" -> {
+                val title = MusicSession.title()
+                if (title == null) Triple("Music", "Nothing playing", "") else Triple("Music", title, MusicSession.artist().orEmpty())
+            }
+            "battery" -> Triple("Battery", batteryLine(context).ifEmpty { "Battery unknown" }, "")
+            "protocol" -> Triple("Protocol", Complications.rotate(settings.protocols, now, 60_000L).ifEmpty { "Add protocols in Settings, Tools and about" }, "")
+            "quote" -> Triple("Quote", Complications.rotate(settings.quotes, now, 5 * 60_000L).ifEmpty { "Add quotes in Settings, Tools and about" }, "")
+            "pomodoro" -> Triple("Pomodoros today", "${settings.pomodorosToday()}", "")
+            "system" -> Triple("System", Build.MODEL, batteryLine(context))
+            else -> Triple("", "", "")
         }
-        if (heavy) textCache[item] = text
-        return text
+        if (heavy) textCache[item] = card
+        return card
     }
 
     private fun boxBackground(style: PanelStyle): GradientDrawable = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
         cornerRadius = style.corner.coerceIn(0, 80) * dp
         val alpha = style.alpha.coerceIn(0, 100) * 255 / 100
-        setColor(Color.argb(alpha, 20, 20, 20))
+        // #141416 at the panel style's opacity. The default opacity is 0, so a card has no fill.
+        setColor(Color.argb(alpha, 0x14, 0x14, 0x16))
         val border = Settings.BORDER_COLOURS.getOrNull(style.border)?.second ?: 0
         if (style.thickness > 0 && border != 0) {
             setStroke((style.thickness.coerceIn(1, 12) * dp).toInt(), border)
+        }
+    }
+
+    /**
+     * One text card: a 15sp semibold grey label top-left, a bold value (40 to 64 sp) and a smaller line.
+     * Three sizes at most, all left-aligned.
+     */
+    private inner class TextCard(context: Context, zoom: Int) : LinearLayout(context) {
+        private val label = TextView(context).apply {
+            textSize = 15f
+            setTextColor(0xFF8E8E93.toInt())
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            gravity = Gravity.START
+        }
+        private val value = TextView(context).apply {
+            textSize = (48f * zoom.coerceIn(50, 200) / 100f).coerceIn(40f, 64f)
+            setTextColor(Color.WHITE)
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            fontFeatureSettings = "tnum"
+            gravity = Gravity.START or Gravity.BOTTOM
+            maxLines = 3
+            ellipsize = TextUtils.TruncateAt.END
+        }
+        private val sub = TextView(context).apply {
+            textSize = 20f
+            setTextColor(0xFF8E8E93.toInt())
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            gravity = Gravity.START
+        }
+
+        init {
+            orientation = VERTICAL
+            addView(label, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+            addView(value, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+            addView(sub, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        }
+
+        fun show(labelText: String, valueText: String, subText: String) {
+            label.text = labelText
+            value.text = valueText
+            sub.text = subText
+            sub.visibility = if (subText.isEmpty()) GONE else VISIBLE
         }
     }
 
