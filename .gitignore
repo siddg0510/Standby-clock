@@ -1,0 +1,15 @@
+﻿# Gradle and build output
+.gradle/
+.kotlin/
+build/
+app/build/
+*.apk
+*.aab
+
+# Local machine settings (SDK path)
+local.properties
+
+# IDE files
+.idea/
+*.iml
+.DS_Store

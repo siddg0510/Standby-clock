@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A clock face in the light, rounded style of the iOS Clock app: black ring, black hands, orange second hand. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Face ring -->
+    <path
+        android:pathData="M54,26 A28,28 0 1,1 54,82 A28,28 0 1,1 54,26 Z"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3" />
+
+    <!-- Four hour markers -->
+    <group android:pivotX="54" android:pivotY="54">
+        <path android:pathData="M54,30 L54,36" android:strokeColor="#FF000000" android:strokeWidth="3" android:strokeLineCap="round" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="90">
+        <path android:pathData="M54,30 L54,36" android:strokeColor="#FF000000" android:strokeWidth="3" android:strokeLineCap="round" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="180">
+        <path android:pathData="M54,30 L54,36" android:strokeColor="#FF000000" android:strokeWidth="3" android:strokeLineCap="round" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="270">
+        <path android:pathData="M54,30 L54,36" android:strokeColor="#FF000000" android:strokeWidth="3" android:strokeLineCap="round" />
+    </group>
+
+    <!-- Hour hand at ten o'clock, minute hand at two (ten past ten) -->
+    <group android:pivotX="54" android:pivotY="54" android:rotation="300">
+        <path android:pathData="M54,54 L54,42" android:strokeColor="#FF000000" android:strokeWidth="4.5" android:strokeLineCap="round" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="60">
+        <path android:pathData="M54,54 L54,31" android:strokeColor="#FF000000" android:strokeWidth="3" android:strokeLineCap="round" />
+    </group>
+
+    <!-- Orange second hand -->
+    <group android:pivotX="54" android:pivotY="54" android:rotation="200">
+        <path android:pathData="M54,60 L54,28" android:strokeColor="#FFFF9500" android:strokeWidth="1.6" android:strokeLineCap="round" />
+    </group>
+
+    <!-- Centre pin -->
+    <path
+        android:pathData="M54,50 A4,4 0 1,1 54,58 A4,4 0 1,1 54,50 Z"
+        android:fillColor="#FF000000" />
+</vector>

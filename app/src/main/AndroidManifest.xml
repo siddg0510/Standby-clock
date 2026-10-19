@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="Standby Clock"
+        android:supportsRtl="true">
+
+        <!-- The only launcher entry. Settings and timers are reached from inside the clock. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="Standby Clock settings"
+            android:theme="@android:style/Theme.DeviceDefault" />
+
+        <activity
+            android:name=".ToolsActivity"
+            android:exported="false"
+            android:label="Tools"
+            android:theme="@android:style/Theme.DeviceDefault" />
+
+        <activity
+            android:name=".TimerActivity"
+            android:exported="false"
+            android:label="Timer and stopwatch"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
+        <activity
+            android:name=".MoreSettingsActivity"
+            android:exported="false"
+            android:label="More settings"
+            android:theme="@android:style/Theme.DeviceDefault" />
+
+        <activity
+            android:name=".OverviewActivity"
+            android:exported="false"
+            android:label="All screens"
+            android:theme="@android:style/Theme.DeviceDefault" />
+
+        <activity
+            android:name=".CalculatorActivity"
+            android:exported="false"
+            android:label="Calculator"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
+        <activity
+            android:name=".PanelEditorActivity"
+            android:exported="false"
+            android:label="Panels"
+            android:theme="@android:style/Theme.DeviceDefault" />
+
+        <activity
+            android:name=".SimonActivity"
+            android:exported="false"
+            android:label="Simon"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
+        <!-- Starts the clock when the charger is connected (if enabled in settings). -->
+        <receiver
+            android:name=".ChargingReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Home-screen widget: time, date and battery. -->
+        <receiver
+            android:name=".ClockWidgetProvider"
+            android:exported="true"
+            android:label="Standby Clock">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/clock_widget_info" />
+        </receiver>
+
+        <!-- Home-screen battery widget: percentage, bar and charging state. -->
+        <receiver
+            android:name=".BatteryWidgetProvider"
+            android:exported="true"
+            android:label="Standby Battery">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/battery_widget_info" />
+        </receiver>
+
+        <!-- Media controls. Works only after the user allows notification access in settings. -->
+        <service
+            android:name=".MusicListenerService"
+            android:exported="true"
+            android:label="Standby Clock music"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- Screensaver entry point. Samsung's "Screen saver" setting can run it while charging. -->
+        <service
+            android:name=".StandbyDream"
+            android:exported="true"
+            android:label="Standby Clock"
+            android:permission="android.permission.BIND_DREAM_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.dreams.DreamService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+
+    </application>
+
+</manifest>
